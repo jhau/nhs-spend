@@ -1,0 +1,40 @@
+services:
+  postgres-mcp:
+    image: crystaldba/postgres-mcp:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URI: ${DOCKER_DATABASE_URL}
+    command: ["--transport", "sse", "--access-mode", "restricted"]
+    ports:
+      - "8000:8000"
+
+  chart-mcp:
+    build:
+      context: https://github.com/antvis/mcp-server-chart.git
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # CLI arguments passed as environment variables
+      TRANSPORT: "sse"
+      PORT: "1122"
+      ENDPOINT: "/sse"
+      HOST: "0.0.0.0"
+      # Optional customization:
+      # VIS_REQUEST_SERVER: "https://antv-studio.alipay.com/api/gpt-vis"
+      # SERVICE_ID: "your-service-id"
+      # DISABLED_TOOLS: "generate_fishbone_diagram,generate_mind_map"
+    command:
+      [
+        "node",
+        "build/index.js",
+        "--transport",
+        "sse",
+        "--port",
+        "1122",
+        "--endpoint",
+        "/sse",
+        "--host",
+        "0.0.0.0",
+      ]
+    ports:
+      - "8001:1122"
