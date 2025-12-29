@@ -1,4 +1,4 @@
-import { and, eq, count, sql } from "drizzle-orm";
+import { and, eq, count, sql, min, max } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -186,5 +186,25 @@ export async function countRunSuppliers(runId: number) {
     .where(eq(spendEntries.assetId, run.assetId));
 
   return row?.count ?? 0;
+}
+
+export async function getRunDateRange(runId: number) {
+  const run = await getRun(runId);
+  if (!run || !run.assetId) return null;
+
+  const [row] = await db
+    .select({
+      minDate: min(spendEntries.paymentDate),
+      maxDate: max(spendEntries.paymentDate),
+    })
+    .from(spendEntries)
+    .where(eq(spendEntries.assetId, run.assetId));
+
+  if (!row || !row.minDate || !row.maxDate) return null;
+
+  return {
+    minDate: row.minDate,
+    maxDate: row.maxDate,
+  };
 }
 

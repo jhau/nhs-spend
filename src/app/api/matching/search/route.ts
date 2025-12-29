@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { searchCompanies } from "@/lib/companies-house";
+import { searchCompanies, calculateSimilarity } from "@/lib/companies-house";
 
 export async function POST(req: Request) {
-  const { query } = await req.json();
+  const { query, supplierName } = await req.json();
   const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
 
   if (!apiKey) {
@@ -15,6 +15,15 @@ export async function POST(req: Request) {
 
   try {
     const data = await searchCompanies(query, apiKey);
+    
+    // Calculate similarity if supplierName is provided
+    if (supplierName && data.items) {
+      data.items = data.items.map(item => ({
+        ...item,
+        similarity: calculateSimilarity(supplierName, item.title)
+      })).sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0));
+    }
+
     return NextResponse.json(data);
   } catch (error: any) {
     console.error("Error searching Companies House:", error);

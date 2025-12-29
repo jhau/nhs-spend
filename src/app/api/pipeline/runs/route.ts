@@ -1,8 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/db";
-import { pipelineRuns } from "@/db/schema";
+import { pipelineAssets, pipelineRuns } from "@/db/schema";
 import { createPipelineRun } from "@/pipeline/pipelineDb";
 import { enqueuePipelineRun } from "@/pipeline/webRunner";
 
@@ -40,14 +40,36 @@ export async function GET(req: Request) {
   const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") ?? 20)));
   const assetIdParam = url.searchParams.get("assetId");
 
-  const base = db.select().from(pipelineRuns);
-  const rows = assetIdParam
-    ? await base
+  const baseQuery = db
+    .select()
+    .from(pipelineRuns);
+
+  const query = assetIdParam
+    ? baseQuery
         .where(eq(pipelineRuns.assetId, Number(assetIdParam)))
         .orderBy(desc(pipelineRuns.createdAt))
         .limit(limit)
-    : await base.orderBy(desc(pipelineRuns.createdAt)).limit(limit);
+    : baseQuery.orderBy(desc(pipelineRuns.createdAt)).limit(limit);
 
-  return NextResponse.json({ runs: rows });
+  const runs = await query;
+
+  // Fetch assets for runs that have assetId
+  const assetIds = runs.map(r => r.assetId).filter((id): id is number => id !== null);
+  const assets = assetIds.length > 0
+    ? await db
+        .select({ id: pipelineAssets.id, originalName: pipelineAssets.originalName })
+        .from(pipelineAssets)
+        .where(inArray(pipelineAssets.id, assetIds))
+    : [];
+
+  const assetMap = new Map(assets.map(a => [a.id, a.originalName]));
+
+  // Merge asset names into runs
+  const runsWithAssets = runs.map(run => ({
+    ...run,
+    assetOriginalName: run.assetId ? assetMap.get(run.assetId) ?? null : null,
+  }));
+
+  return NextResponse.json({ runs: runsWithAssets });
 }
 

@@ -136,16 +136,25 @@ export default function PipelinePage() {
     const es = new EventSource(`/api/pipeline/runs/${runId}/logs/stream`);
     eventSourceRef.current = es;
 
-    es.addEventListener("connected", () => {
+    console.log(`[SSE] Connecting to run ${runId}...`);
+
+    es.addEventListener("connected", (e) => {
+      console.log(`[SSE] Connected to run ${runId}`, e);
       setStreamStatus("connected");
     });
 
     es.addEventListener("log", (e) => {
-      const entry = JSON.parse(e.data) as LogEntry;
-      setLogs((prev) => [...prev, entry]);
+      try {
+        const entry = JSON.parse(e.data) as LogEntry;
+        console.log(`[SSE] Received log:`, entry.message);
+        setLogs((prev) => [...prev, entry]);
+      } catch (err) {
+        console.error(`[SSE] Failed to parse log data:`, e.data, err);
+      }
     });
 
     es.addEventListener("complete", (e) => {
+      console.log(`[SSE] Run complete:`, e.data);
       const data = JSON.parse(e.data) as { status: string };
       setStreamStatus("complete");
       es.close();
@@ -153,7 +162,8 @@ export default function PipelinePage() {
       void refreshRuns();
     });
 
-    es.onerror = () => {
+    es.onerror = (e) => {
+      console.error(`[SSE] EventSource error:`, e);
       setStreamStatus("complete");
       es.close();
     };
@@ -635,6 +645,7 @@ export default function PipelinePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Run</TableHead>
+                <TableHead>Filename</TableHead>
                 <TableHead>Asset</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
@@ -651,6 +662,11 @@ export default function PipelinePage() {
                     >
                       #{r.id}
                     </Link>
+                  </TableCell>
+                  <TableCell className="max-w-[300px] truncate">
+                    {r.assetOriginalName || (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
@@ -687,7 +703,7 @@ export default function PipelinePage() {
               {runs.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="h-24 text-center text-muted-foreground"
                   >
                     No runs yet.

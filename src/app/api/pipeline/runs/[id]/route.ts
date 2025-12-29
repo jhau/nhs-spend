@@ -12,6 +12,7 @@ import {
   countSkippedRows,
   getRunSuppliers,
   countRunSuppliers,
+  getRunDateRange,
 } from "@/pipeline/pipelineDb";
 
 export async function GET(
@@ -35,7 +36,7 @@ export async function GET(
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
   }
 
-  const [asset, stages, logs, skippedRows, skippedRowsCount, suppliers, suppliersCount] = await Promise.all([
+  const [asset, stages, logs, skippedRows, skippedRowsCount, suppliers, suppliersCount, dateRange] = await Promise.all([
     run.assetId ? getAsset(run.assetId) : Promise.resolve(null),
     getRunStages(runId),
     getRunLogs(runId, 500),
@@ -43,6 +44,7 @@ export async function GET(
     countSkippedRows(runId),
     getRunSuppliers(runId, suppliersLimit, suppliersOffset),
     countRunSuppliers(runId),
+    getRunDateRange(runId),
   ]);
 
   return NextResponse.json({
@@ -58,6 +60,7 @@ export async function GET(
     suppliersCount,
     suppliersLimit,
     suppliersOffset,
+    dateRange,
   });
 }
 

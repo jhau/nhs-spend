@@ -97,6 +97,10 @@ type RunDetailResponse = {
   suppliersCount?: number;
   suppliersLimit?: number;
   suppliersOffset?: number;
+  dateRange?: {
+    minDate: string;
+    maxDate: string;
+  } | null;
   error?: string;
 };
 
@@ -389,7 +393,12 @@ function SuppliersTable({
             {suppliers.map((s) => (
               <TableRow key={s.id}>
                 <TableCell className="font-medium w-[300px] max-w-[300px] break-words whitespace-normal leading-tight">
-                  {s.name}
+                  <Link
+                    href={`/suppliers/${encodeURIComponent(s.name)}`}
+                    className="text-primary hover:underline"
+                  >
+                    {s.name}
+                  </Link>
                 </TableCell>
                 <TableCell className="w-[120px]">
                   <Badge
@@ -544,23 +553,33 @@ export default function PipelineRunPage({
     const es = new EventSource(`/api/pipeline/runs/${runId}/logs/stream`);
     eventSourceRef.current = es;
 
-    es.addEventListener("connected", () => {
+    console.log(`[SSE] Connecting to run ${runId}...`);
+
+    es.addEventListener("connected", (e) => {
+      console.log(`[SSE] Connected to run ${runId}`, e);
       setStreamStatus("connected");
     });
 
     es.addEventListener("log", (e) => {
-      const entry = JSON.parse(e.data) as LogEntry;
-      setLiveLogs((prev) => [...prev, entry]);
+      try {
+        const entry = JSON.parse(e.data) as LogEntry;
+        console.log(`[SSE] Received log:`, entry.message);
+        setLiveLogs((prev) => [...prev, entry]);
+      } catch (err) {
+        console.error(`[SSE] Failed to parse log data:`, e.data, err);
+      }
     });
 
-    es.addEventListener("complete", () => {
+    es.addEventListener("complete", (e) => {
+      console.log(`[SSE] Run complete:`, e.data);
       setStreamStatus("complete");
       es.close();
       // Refresh to get final state
       void fetchRun();
     });
 
-    es.onerror = () => {
+    es.onerror = (e) => {
+      console.error(`[SSE] EventSource error:`, e);
       setStreamStatus("complete");
       es.close();
     };
@@ -708,6 +727,15 @@ export default function PipelineRunPage({
                   {run.assetId}
                 </code>
               </div>
+
+              {data.dateRange && (
+                <div className="flex items-center gap-1.5">
+                  <Clock className="size-4 text-primary" />
+                  <span className="text-sm font-semibold text-foreground">
+                    {new Date(data.dateRange.minDate).toLocaleDateString()} - {new Date(data.dateRange.maxDate).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Metrics Cards */}

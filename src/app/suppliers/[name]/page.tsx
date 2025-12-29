@@ -34,6 +34,16 @@ interface Transaction {
   payment_date: string;
 }
 
+interface CompanySearchResult {
+  company_number: string;
+  title: string;
+  company_status: string;
+  company_type: string;
+  date_of_creation?: string;
+  address_snippet?: string;
+  similarity?: number;
+}
+
 interface LinkedCompany {
   companyNumber: string;
   companyName: string;
@@ -112,6 +122,7 @@ export default function SupplierPage() {
   const name = decodeURIComponent(params.name as string);
 
   const [supplierName, setSupplierName] = useState<string>("");
+  const [supplierId, setSupplierId] = useState<number | null>(null);
   const [linkedCompany, setLinkedCompany] = useState<LinkedCompany | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [topBuyers, setTopBuyers] = useState<Buyer[]>([]);
@@ -131,6 +142,12 @@ export default function SupplierPage() {
   } | null>(null);
   const [expandedContracts, setExpandedContracts] = useState<Set<string>>(new Set());
   const [selectedContractDetails, setSelectedContractDetails] = useState<Contract | null>(null);
+
+  // Search Companies House state
+  const [isSearchingCompanies, setIsSearchingCompanies] = useState(false);
+  const [companySearchResults, setCompanySearchResults] = useState<CompanySearchResult[]>([]);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [linkingCompany, setLinkingCompany] = useState<string | null>(null);
 
   // Date range
   const defaultDates = getDefaultDateRange();
@@ -158,6 +175,7 @@ export default function SupplierPage() {
       }
       const data = await res.json();
       setSupplierName(data.supplier.name);
+      setSupplierId(data.supplier.id);
       setLinkedCompany(data.linkedCompany);
       setSummary(data.summary);
       setTopBuyers(data.topBuyers);
@@ -197,6 +215,52 @@ export default function SupplierPage() {
       setContractsLoading(false);
     }
   }, [name]);
+
+  const searchCompaniesHouse = async () => {
+    setIsSearchingCompanies(true);
+    setShowSearchModal(true);
+    try {
+      const res = await fetch("/api/matching/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: supplierName, supplierName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCompanySearchResults(data.items || []);
+      }
+    } catch (err) {
+      console.error("Search failed:", err);
+    } finally {
+      setIsSearchingCompanies(false);
+    }
+  };
+
+  const linkCompany = async (company: CompanySearchResult) => {
+    if (!supplierId) return;
+    setLinkingCompany(company.company_number);
+    try {
+      const res = await fetch("/api/matching/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierId,
+          companyNumber: company.company_number,
+          matchConfidence: company.similarity,
+        }),
+      });
+      if (res.ok) {
+        setShowSearchModal(false);
+        // Refresh data to show linked company
+        fetchData();
+        fetchContracts();
+      }
+    } catch (err) {
+      console.error("Linking failed:", err);
+    } finally {
+      setLinkingCompany(null);
+    }
+  };
 
   // Fetch contracts when component mounts
   useEffect(() => {
@@ -264,7 +328,7 @@ export default function SupplierPage() {
           ← Back to Buyers
         </Link>
         <h1 style={styles.title}>{supplierName}</h1>
-        {linkedCompany && (
+        {linkedCompany ? (
           <div style={styles.meta}>
             <span style={styles.badge}>
               <a
@@ -286,6 +350,22 @@ export default function SupplierPage() {
             {linkedCompany.address && (
               <span style={styles.badge}>{linkedCompany.address}</span>
             )}
+            <button
+              onClick={searchCompaniesHouse}
+              style={styles.relinkButton}
+            >
+              Change Link
+            </button>
+          </div>
+        ) : (
+          <div style={styles.meta}>
+            <span style={styles.noLinkText}>No Companies House link</span>
+            <button
+              onClick={searchCompaniesHouse}
+              style={styles.searchButton}
+            >
+              Search Companies House
+            </button>
           </div>
         )}
       </div>
@@ -774,6 +854,70 @@ export default function SupplierPage() {
           </div>
         </div>
       )}
+
+      {/* Companies House Search Modal */}
+      {showSearchModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowSearchModal(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Search Companies House</h2>
+              <button
+                onClick={() => setShowSearchModal(false)}
+                style={styles.modalCloseButton}
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              <div style={styles.searchPrompt}>
+                Searching for: <strong>{supplierName}</strong>
+              </div>
+              {isSearchingCompanies ? (
+                <div style={styles.loading}>Searching Companies House...</div>
+              ) : companySearchResults.length === 0 ? (
+                <div style={styles.emptyState}>No companies found</div>
+              ) : (
+                <div style={styles.searchResultsList}>
+                  {companySearchResults.map((company) => (
+                    <div key={company.company_number} style={styles.searchResultItem}>
+                      <div style={styles.searchResultInfo}>
+                        <div style={styles.searchResultHeader}>
+                          <span style={styles.searchResultTitle}>{company.title}</span>
+                          {company.similarity !== undefined && (
+                            <span style={{
+                              ...styles.confidenceBadge,
+                              backgroundColor: company.similarity > 0.8 ? "#dcfce7" : company.similarity > 0.5 ? "#fef3c7" : "#f1f1f1",
+                              color: company.similarity > 0.8 ? "#166534" : company.similarity > 0.5 ? "#92400e" : "#666",
+                            }}>
+                              {Math.round(company.similarity * 100)}% match
+                            </span>
+                          )}
+                        </div>
+                        <div style={styles.searchResultMeta}>
+                          {company.company_number} • {company.company_status} • {company.company_type}
+                        </div>
+                        {company.address_snippet && (
+                          <div style={styles.searchResultAddress}>{company.address_snippet}</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => linkCompany(company)}
+                        disabled={linkingCompany === company.company_number}
+                        style={{
+                          ...styles.linkButton,
+                          opacity: linkingCompany === company.company_number ? 0.7 : 1,
+                        }}
+                      >
+                        {linkingCompany === company.company_number ? "Linking..." : "Link Supplier"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1134,6 +1278,92 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: "8px",
     marginBottom: "16px",
     fontSize: "14px",
+  },
+  searchButton: {
+    padding: "4px 12px",
+    fontSize: "12px",
+    fontWeight: 500,
+    backgroundColor: "#5c4d3c",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+  },
+  relinkButton: {
+    padding: "4px 10px",
+    fontSize: "11px",
+    fontWeight: 500,
+    backgroundColor: "transparent",
+    color: "#666",
+    border: "1px solid #ddd",
+    borderRadius: "4px",
+    cursor: "pointer",
+    marginLeft: "4px",
+  },
+  noLinkText: {
+    fontSize: "12px",
+    color: "#888",
+    fontStyle: "italic",
+    alignSelf: "center",
+  },
+  searchPrompt: {
+    fontSize: "14px",
+    marginBottom: "16px",
+    color: "#444",
+  },
+  searchResultsList: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "12px",
+  },
+  searchResultItem: {
+    padding: "16px",
+    border: "1px solid #e8e8e8",
+    borderRadius: "8px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#fcfcfc",
+  },
+  searchResultInfo: {
+    flex: 1,
+    marginRight: "16px",
+  },
+  searchResultHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginBottom: "4px",
+  },
+  searchResultTitle: {
+    fontSize: "15px",
+    fontWeight: 600,
+    color: "#1a1a2e",
+  },
+  confidenceBadge: {
+    padding: "2px 8px",
+    fontSize: "11px",
+    fontWeight: 600,
+    borderRadius: "10px",
+  },
+  searchResultMeta: {
+    fontSize: "12px",
+    color: "#666",
+    marginBottom: "4px",
+  },
+  searchResultAddress: {
+    fontSize: "12px",
+    color: "#888",
+  },
+  linkButton: {
+    padding: "8px 16px",
+    fontSize: "13px",
+    fontWeight: 500,
+    backgroundColor: "#166534",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
   },
   contractsHeader: {
     display: "flex",

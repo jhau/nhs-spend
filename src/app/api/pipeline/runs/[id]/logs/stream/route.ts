@@ -26,92 +26,94 @@ export async function GET(
 
   const encoder = new TextEncoder();
 
+  let unsubscribe: (() => void) | null = null;
+  let pingInterval: NodeJS.Timeout | null = null;
+
   const stream = new ReadableStream({
     async start(controller) {
+      const sendEvent = (event: string, data: any) => {
+        try {
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+          );
+        } catch (e) {
+          // Stream might be closed
+        }
+      };
+
       // Send initial connection event
-      controller.enqueue(
-        encoder.encode(`event: connected\ndata: ${JSON.stringify({ runId })}\n\n`)
-      );
+      sendEvent("connected", { runId });
+      console.log(`[SSE] Client connected for run ${runId}`);
 
       // If run already finished, send logs from DB and complete
       if (run.status === "succeeded" || run.status === "failed") {
-        // Get logs from database
+        console.log(`[SSE] Run ${runId} already finished with status ${run.status}, sending DB logs`);
         const dbLogs = await getRunLogs(runId, 500);
         for (const log of dbLogs) {
-          const entry: LogEntry = {
+          sendEvent("log", {
             runId,
             level: log.level as LogEntry["level"],
             message: log.message,
             meta: log.meta ?? undefined,
             timestamp: log.ts.toISOString(),
-          };
-          controller.enqueue(
-            encoder.encode(`event: log\ndata: ${JSON.stringify(entry)}\n\n`)
-          );
+          });
         }
 
-        controller.enqueue(
-          encoder.encode(
-            `event: complete\ndata: ${JSON.stringify({ status: run.status })}\n\n`
-          )
-        );
-        controller.close();
+        sendEvent("complete", { status: run.status });
+        try {
+          controller.close();
+        } catch (e) {}
         return;
       }
 
-      // Replay any buffered logs first (for late-connecting clients)
+      // Replay any buffered logs first
       const bufferedLogs = getBufferedLogs(runId);
+      console.log(`[SSE] Replaying ${bufferedLogs.length} buffered logs for run ${runId}`);
       for (const entry of bufferedLogs) {
-        try {
-          controller.enqueue(
-            encoder.encode(`event: log\ndata: ${JSON.stringify(entry)}\n\n`)
-          );
-        } catch {
-          // Stream closed
-          return;
-        }
+        sendEvent("log", entry);
       }
 
-      // Track which logs we've already sent to avoid duplicates
       const sentLogIds = new Set(
         bufferedLogs.map((l) => `${l.timestamp}-${l.message}`)
       );
 
-      // Subscribe to live log updates
-      const unsubscribe = subscribeToRunLogs(runId, (entry: LogEntry) => {
-        const logId = `${entry.timestamp}-${entry.message}`;
-        if (sentLogIds.has(logId)) {
-          return; // Skip duplicates
+      // Keep track of the interval so we can clear it
+      pingInterval = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": ping\n\n"));
+        } catch (e) {
+          if (pingInterval) clearInterval(pingInterval);
         }
+      }, 15000);
+
+      // Subscribe to live log updates
+      console.log(`[SSE] Subscribing to live logs for run ${runId}`);
+      unsubscribe = subscribeToRunLogs(runId, (entry: LogEntry) => {
+        const logId = `${entry.timestamp}-${entry.message}`;
+        if (sentLogIds.has(logId)) return;
         sentLogIds.add(logId);
 
-        try {
-          controller.enqueue(
-            encoder.encode(`event: log\ndata: ${JSON.stringify(entry)}\n\n`)
-          );
+        console.log(`[SSE] Sending live log to run ${runId}: ${entry.message.slice(0, 50)}...`);
+        sendEvent("log", entry);
 
-          // Check if this is a completion message
-          if (
-            entry.message === "Pipeline run succeeded" ||
-            entry.message === "Pipeline run failed"
-          ) {
-            controller.enqueue(
-              encoder.encode(
-                `event: complete\ndata: ${JSON.stringify({
-                  status: entry.message.includes("succeeded") ? "succeeded" : "failed",
-                })}\n\n`
-              )
-            );
+        if (
+          entry.message === "Pipeline run succeeded" ||
+          entry.message === "Pipeline run failed"
+        ) {
+          sendEvent("complete", {
+            status: entry.message.includes("succeeded") ? "succeeded" : "failed",
+          });
+          if (pingInterval) clearInterval(pingInterval);
+          try {
             controller.close();
-            unsubscribe();
-          }
-        } catch {
-          // Stream closed by client
-          unsubscribe();
+          } catch (e) {}
+          if (unsubscribe) unsubscribe();
         }
       });
-
-      // Handle client disconnect - cleanup is handled when controller.enqueue throws
+    },
+    cancel() {
+      if (pingInterval) clearInterval(pingInterval);
+      if (unsubscribe) unsubscribe();
     },
   });
 
@@ -120,6 +122,7 @@ export async function GET(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
