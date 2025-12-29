@@ -1,20 +1,23 @@
-import "dotenv/config";
-
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
-
 import { eq } from "drizzle-orm";
-import { readFile, utils, type WorkBook } from "xlsx";
+import { read, utils, type WorkBook } from "xlsx";
 
-import { db, type DbClient } from "@/db";
-import { organisations, spendEntries } from "@/db/schema";
+import type { DbClient } from "@/db";
+import { organisations, pipelineAssets, spendEntries } from "@/db/schema";
 
-type CliOptions = {
-  filePath: string;
+import { presignObjectUrl } from "../objectStorage";
+import type { PipelineStage } from "../types";
+
+export type ImportSpendExcelInput = {
+  /**
+   * Primary provenance identifier (Option C).
+   * The stage will download the workbook from object storage using this asset.
+   */
   assetId: number;
-  truncate: boolean;
-  dryRun: boolean;
+  /**
+   * If true, clears all spend entries + organisations before importing.
+   * Useful early in development; do not use once multiple assets are loaded.
+   */
+  truncateAll?: boolean;
 };
 
 type TrustMetadata = {
@@ -59,265 +62,182 @@ const MONTH_LOOKUP = new Map([
   ["dec", 12],
 ]);
 
-async function main() {
-  const options = parseArgs();
-  const resolvedPath = path.resolve(options.filePath);
+export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
+  id: "importSpendExcel",
+  title: "Import spend Excel workbook",
+  validate(input) {
+    if (!Number.isInteger(input.assetId) || input.assetId <= 0) {
+      throw new Error("assetId must be a positive integer");
+    }
+  },
+  async run(ctx, input) {
+    const asset = await ctx.db
+      .select()
+      .from(pipelineAssets)
+      .where(eq(pipelineAssets.id, input.assetId))
+      .limit(1);
 
-  if (!fs.existsSync(resolvedPath)) {
-    console.error(`✖ Path not found: ${resolvedPath}`);
-    process.exit(1);
-  }
+    if (!asset[0]) {
+      await ctx.log({
+        level: "error",
+        message: `Asset not found: ${input.assetId}`,
+      });
+      return { status: "failed" };
+    }
 
-  const stats = fs.statSync(resolvedPath);
-  if (stats.isDirectory()) {
-    console.error(
-      `✖ Directory import is no longer supported by this script. Use the Web UI pipeline instead.`
+    const objectKey = asset[0].objectKey;
+
+    await ctx.log({
+      level: "info",
+      message: `Downloading workbook from object storage`,
+      meta: { assetId: input.assetId, objectKey },
+    });
+
+    const downloadUrl = presignObjectUrl({
+      method: "GET",
+      objectKey,
+      expiresSeconds: 60,
+    });
+
+    const resp = await fetch(downloadUrl);
+    if (!resp.ok) {
+      await ctx.log({
+        level: "error",
+        message: `Failed to download asset (${resp.status} ${resp.statusText})`,
+        meta: { assetId: input.assetId, objectKey },
+      });
+      return { status: "failed" };
+    }
+
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    const workbook = read(buffer, { type: "buffer", cellDates: true });
+
+    const metadataMap = parseTrustMetadata(workbook);
+    const dataSheetNames = workbook.SheetNames.filter(
+      (name) => name.trim().toLowerCase() !== "trusts"
     );
-    process.exit(1);
-  }
-  if (!stats.isFile()) {
-    console.error(`✖ Path must be a file: ${resolvedPath}`);
-    process.exit(1);
-  }
-  if (!/\.(xlsx|xls)$/i.test(resolvedPath)) {
-    console.error(
-      `✖ File must be an Excel file (.xlsx or .xls): ${resolvedPath}`
+
+    if (dataSheetNames.length === 0) {
+      await ctx.log({
+        level: "warn",
+        message: `No data sheets found in workbook (skipping)`,
+        meta: { assetId: input.assetId, objectKey },
+      });
+      return {
+        status: "skipped",
+        metrics: { sheetsProcessed: 0, paymentsInserted: 0, paymentsSkipped: 0 },
+      };
+    }
+
+    const discoveredTrusts = gatherTrustNames(
+      workbook,
+      dataSheetNames,
+      metadataMap
     );
-    process.exit(1);
-  }
-  const filesToProcess: string[] = [resolvedPath];
 
-  if (options.dryRun) {
-    console.info("\n🔍 DRY RUN MODE - No data will be modified\n");
-  }
+    if (ctx.dryRun) {
+      await ctx.log({
+        level: "info",
+        message: "Dry run: would import workbook",
+        meta: {
+          assetId: input.assetId,
+          sheets: dataSheetNames.length,
+          trustsMetadata: metadataMap.size,
+          trustsDiscovered: discoveredTrusts.size,
+        },
+      });
+      return {
+        status: "succeeded",
+        metrics: {
+          dryRun: true,
+          sheets: dataSheetNames.length,
+          trustsMetadata: metadataMap.size,
+          trustsDiscovered: discoveredTrusts.size,
+        },
+      };
+    }
 
-  let totalTrustsInserted = 0;
-  let totalTrustsUpdated = 0;
-  let totalTrustsCreatedWithoutMetadata = 0;
-  let totalSheetsProcessed = 0;
-  let totalPaymentsInserted = 0;
-  let totalPaymentsSkipped = 0;
-  const allWarnings: string[] = [];
-
-  for (const filePath of filesToProcess) {
-    console.info(`\n📄 Processing: ${path.basename(filePath)}`);
-
-    try {
-      const workbook = readFile(filePath, { cellDates: true });
-      const metadataMap = parseTrustMetadata(workbook);
-      const dataSheetNames = workbook.SheetNames.filter(
-        (name) => name.trim().toLowerCase() !== "trusts"
-      );
-
-      if (dataSheetNames.length === 0) {
-        console.warn(
-          `  ⚠️  No data sheets found in ${path.basename(filePath)} (skipping)`
-        );
-        continue;
+    const result = await ctx.db.transaction(async (tx) => {
+      if (input.truncateAll) {
+        await tx.delete(spendEntries);
+        await tx.delete(organisations);
+        await ctx.log({
+          level: "warn",
+          message: "Truncated all spend entries and organisations",
+        });
+      } else {
+        await tx
+          .delete(spendEntries)
+          .where(eq(spendEntries.assetId, input.assetId));
       }
 
-      const discoveredTrusts = gatherTrustNames(
+      const syncResult = await syncTrusts(tx, metadataMap, discoveredTrusts);
+
+      const importSummary = await importSpendSheets(
+        tx,
         workbook,
         dataSheetNames,
-        metadataMap
+        syncResult.idByKey,
+        input.assetId
       );
 
-      if (options.dryRun) {
-        console.info(`  • Would process ${dataSheetNames.length} sheet(s)`);
-        console.info(`  • Metadata for ${metadataMap.size} trust(s)`);
-        console.info(
-          `  • Discovered ${discoveredTrusts.size} unique trust(s) in data`
-        );
-        continue;
-      }
+      return { syncResult, importSummary };
+    });
 
-      const result = await db.transaction(async (tx: DbClient) => {
-        if (options.truncate && filesToProcess.indexOf(filePath) === 0) {
-          // Only truncate once, on the first file (before syncing trusts)
-          await tx.delete(spendEntries);
-          await tx.delete(organisations);
-          console.info(
-            "  • Truncated all existing spend entries and organisations"
-          );
-        } else {
-          // Delete only entries from this asset to avoid duplicates
-          await tx.delete(spendEntries).where(eq(spendEntries.assetId, options.assetId));
-        }
-
-        const syncResult = await syncTrusts(tx, metadataMap, discoveredTrusts);
-
-        const importSummary = await importSpendSheets(
-          tx,
-          workbook,
-          dataSheetNames,
-          metadataMap,
-          syncResult.idByKey,
-          options.assetId
-        );
-
-        return { syncResult, importSummary };
-      });
-
-      totalTrustsInserted += result.syncResult.inserted;
-      totalTrustsUpdated += result.syncResult.updated;
-      totalTrustsCreatedWithoutMetadata +=
-        result.syncResult.createdWithoutMetadata;
-      totalSheetsProcessed += result.importSummary.sheetsProcessed;
-      totalPaymentsInserted += result.importSummary.paymentsInserted;
-      totalPaymentsSkipped += result.importSummary.paymentsSkipped;
-
-      allWarnings.push(
-        ...result.importSummary.warnings.map(
-          (w: string) => `${path.basename(filePath)}: ${w}`
-        )
-      );
-
-      console.info(
-        `  ✓ Trusts: +${result.syncResult.inserted} inserted, ~${result.syncResult.updated} updated`
-      );
-      console.info(
-        `  ✓ Payments: +${result.importSummary.paymentsInserted} inserted, ${result.importSummary.paymentsSkipped} skipped`
-      );
-    } catch (error) {
-      console.error(`  ✖ Failed to process ${path.basename(filePath)}:`, error);
-      if (filesToProcess.length === 1) {
-        process.exit(1);
-      }
-      continue;
-    }
-  }
-
-  if (!options.dryRun) {
-    console.info("\n✅ Import complete");
-    console.info(`  • Files processed: ${filesToProcess.length}`);
-    console.info(`  • Total trust records inserted: ${totalTrustsInserted}`);
-    console.info(`  • Total trust records updated: ${totalTrustsUpdated}`);
-    console.info(
-      `  • Trusts created without metadata: ${totalTrustsCreatedWithoutMetadata}`
-    );
-    console.info(`  • Total sheets processed: ${totalSheetsProcessed}`);
-    console.info(`  • Total payments inserted: ${totalPaymentsInserted}`);
-    console.info(`  • Total payments skipped: ${totalPaymentsSkipped}`);
-
-    if (allWarnings.length > 0) {
-      const displayWarnings = allWarnings.slice(0, MAX_WARNINGS);
-      console.warn("\n⚠️  Warnings:");
-      for (const warning of displayWarnings) {
-        console.warn(`  - ${warning}`);
-      }
-      if (allWarnings.length > MAX_WARNINGS) {
-        console.warn(
-          `  … and ${allWarnings.length - MAX_WARNINGS} more warnings`
-        );
-      }
-    }
-  }
-}
-
-function parseArgs(): CliOptions {
-  const args = process.argv.slice(2);
-  let filePath: string | undefined;
-  let assetId: number | undefined;
-  let truncate = false;
-  let dryRun = false;
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--truncate") {
-      truncate = true;
-      continue;
-    }
-    if (arg === "--dry-run") {
-      dryRun = true;
-      continue;
-    }
-    if (arg === "--asset-id") {
-      const value = args[++i];
-      assetId = value ? Number(value) : undefined;
-      continue;
-    }
-    if (arg === "--file" || arg === "--dir" || arg === "--directory") {
-      filePath = args[++i];
-      continue;
-    }
-    if (!filePath) {
-      filePath = arg;
-    }
-  }
-
-  if (!filePath) {
-    console.error(
-      "Usage: pnpm data:import -- <file.xlsx> --asset-id <id> [--truncate] [--dry-run]"
-    );
-    console.error("");
-    console.error("Examples:");
-    console.error("  pnpm data:import -- data/file.xlsx --asset-id 123");
-    console.error(
-      "  pnpm data:import -- data/ --truncate     # Clear all existing data first"
-    );
-    console.error(
-      "  pnpm data:import -- data/ --dry-run      # Preview without making changes"
-    );
-    process.exit(1);
-  }
-
-  if (!assetId || !Number.isInteger(assetId) || assetId <= 0) {
-    console.error("✖ --asset-id is required and must be a positive integer");
-    process.exit(1);
-  }
-
-  return { filePath, assetId, truncate, dryRun };
-}
+    return {
+      status: "succeeded",
+      warnings: result.importSummary.warnings,
+      metrics: {
+        assetId: input.assetId,
+        trustsInserted: result.syncResult.inserted,
+        trustsUpdated: result.syncResult.updated,
+        trustsCreatedWithoutMetadata: result.syncResult.createdWithoutMetadata,
+        sheetsProcessed: result.importSummary.sheetsProcessed,
+        paymentsInserted: result.importSummary.paymentsInserted,
+        paymentsSkipped: result.importSummary.paymentsSkipped,
+      },
+    };
+  },
+};
 
 /**
  * Normalizes trust/organisation names to ensure consistent matching.
- * Converts to uppercase and trims whitespace so that different capitalizations
- * (e.g., "Airedale NHS Foundation Trust" and "AIREDALE NHS FOUNDATION TRUST")
- * are treated as the same organisation.
  */
 function normaliseTrustName(name: string): string {
   return name.replace(/\s+/gu, " ").trim().toUpperCase();
 }
 
 function cleanString(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString();
   return String(value).replace(/\s+/gu, " ").trim();
+}
+
+function undefinedIfEmpty(value: string): string | undefined {
+  return value ? value : undefined;
 }
 
 function parseTrustMetadata(workbook: WorkBook): Map<string, TrustMetadata> {
   const sheetName = workbook.SheetNames.find(
     (name) => name.trim().toLowerCase() === "trusts"
   );
-  if (!sheetName) {
-    return new Map();
-  }
+  if (!sheetName) return new Map();
 
   const sheet = workbook.Sheets[sheetName];
-  if (!sheet) {
-    return new Map();
-  }
+  if (!sheet) return new Map();
 
   const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
     header: 1,
     defval: null,
     raw: true,
   });
-  if (rows.length === 0) {
-    return new Map();
-  }
+  if (rows.length === 0) return new Map();
 
   const metadata = new Map<string, TrustMetadata>();
   const header = rows[0].map((value) => cleanString(value).toLowerCase());
 
   const nameIndex = header.findIndex((cell) => cell.includes("trust name"));
-  if (nameIndex === -1) {
-    return metadata;
-  }
+  if (nameIndex === -1) return metadata;
 
   const indexFor = (label: string) =>
     header.findIndex((cell) => cell.includes(label));
@@ -374,10 +294,6 @@ function parseTrustMetadata(workbook: WorkBook): Map<string, TrustMetadata> {
   return metadata;
 }
 
-function undefinedIfEmpty(value: string): string | undefined {
-  return value ? value : undefined;
-}
-
 function gatherTrustNames(
   workbook: WorkBook,
   sheetNames: string[],
@@ -413,12 +329,6 @@ function gatherTrustNames(
   return discovered;
 }
 
-/**
- * Syncs organisations to the database, creating or updating records as needed.
- * Uses normalized names as keys to prevent duplicates from different capitalizations.
- * The organisations table has a unique constraint on the name field, ensuring
- * each normalized name appears only once in the database.
- */
 async function syncTrusts(
   client: DbClient,
   metadataMap: Map<string, TrustMetadata>,
@@ -507,7 +417,6 @@ async function importSpendSheets(
   client: DbClient,
   workbook: WorkBook,
   sheetNames: string[],
-  metadataMap: Map<string, TrustMetadata>,
   trustIdByKey: Map<string, number>,
   assetId: number
 ): Promise<ImportSummary> {
@@ -622,9 +531,7 @@ async function importSpendSheets(
 }
 
 function recordWarning(warnings: string[], message: string) {
-  if (warnings.length >= MAX_WARNINGS) {
-    return;
-  }
+  if (warnings.length >= MAX_WARNINGS) return;
   warnings.push(message);
 }
 
@@ -748,4 +655,3 @@ function pad(value: number): string {
   return value.toString().padStart(2, "0");
 }
 
-void main();

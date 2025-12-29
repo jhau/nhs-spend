@@ -1,0 +1,2 @@
+ALTER TABLE "supplier_company_links" ADD COLUMN "status" text DEFAULT 'matched' NOT NULL;--> statement-breakpoint
+CREATE INDEX "supplier_company_links_status_idx" ON "supplier_company_links" USING btree ("status");
