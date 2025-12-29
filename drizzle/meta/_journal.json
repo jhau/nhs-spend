@@ -50,8 +50,6 @@
       "when": 1764726369905,
       "tag": "0006_common_whistler",
       "breakpoints": true
-<<<<<<< Current (Your changes)
-=======
     },
     {
       "idx": 7,
@@ -59,7 +57,6 @@
       "when": 1767000000000,
       "tag": "0007_pipeline_webui",
       "breakpoints": true
->>>>>>> Incoming (Background Agent changes)
     }
   ]
 }
