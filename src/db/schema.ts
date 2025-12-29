@@ -110,32 +110,6 @@ export const suppliers = pgTable(
   })
 );
 
-// Link supplier names from spend data to verified Companies House records
-// status: 'matched' | 'no_match' | 'skipped'
-export const supplierCompanyLinks = pgTable(
-  "supplier_company_links",
-  {
-    id: serial("id").primaryKey(),
-    supplierName: text("supplier_name").notNull(),
-    companyId: integer("company_id").references(() => companies.id),
-    status: text("status").notNull().default("matched"),
-    matchConfidence: numeric("match_confidence", { precision: 5, scale: 2 }),
-    matchedAt: timestamp("matched_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    manuallyVerified: boolean("manually_verified").default(false),
-  },
-  (link) => ({
-    supplierNameIdx: uniqueIndex("supplier_company_links_name_unique").on(
-      link.supplierName
-    ),
-    companyIdIdx: index("supplier_company_links_company_idx").on(
-      link.companyId
-    ),
-    statusIdx: index("supplier_company_links_status_idx").on(link.status),
-  })
-);
-
 /**
  * Pipeline metadata: raw files live in object storage; Postgres stores metadata only.
  */
@@ -169,10 +143,7 @@ export const spendEntries = pgTable(
     organisationId: integer("organisation_id")
       .references(() => organisations.id, { onDelete: "cascade" })
       .notNull(),
-    companyId: integer("company_id").references(() => companies.id, {
-      onDelete: "set null",
-    }),
-    supplier: text("supplier").notNull(),
+    rawSupplier: text("raw_supplier").notNull(),
     supplierId: integer("supplier_id").references(() => suppliers.id, {
       onDelete: "cascade",
     }), // Nullable during migration
@@ -191,7 +162,6 @@ export const spendEntries = pgTable(
       entry.organisationId,
       entry.paymentDate
     ),
-    companyIdx: index("spend_entries_company_idx").on(entry.companyId),
     supplierIdx: index("spend_entries_supplier_idx").on(entry.supplierId),
     uniqueSourceRow: uniqueIndex("spend_entries_source_row_unique").on(
       entry.assetId,
@@ -205,13 +175,15 @@ export const pipelineRuns = pgTable(
   "pipeline_runs",
   {
     id: serial("id").primaryKey(),
-    assetId: integer("asset_id")
-      .references(() => pipelineAssets.id, { onDelete: "restrict" })
-      .notNull(),
+    assetId: integer("asset_id").references(() => pipelineAssets.id, {
+      onDelete: "restrict",
+    }),
     trigger: text("trigger").notNull().default("web"),
     createdBy: text("created_by"),
     status: text("status").notNull().default("queued"), // queued | running | succeeded | failed | cancelled
     dryRun: boolean("dry_run").notNull().default(false),
+    fromStageId: text("from_stage_id"),
+    toStageId: text("to_stage_id"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -262,6 +234,26 @@ export const pipelineRunLogs = pgTable(
   },
   (log) => ({
     runTsIdx: index("pipeline_run_logs_run_ts_idx").on(log.runId, log.ts),
+  })
+);
+
+export const pipelineSkippedRows = pgTable(
+  "pipeline_skipped_rows",
+  {
+    id: serial("id").primaryKey(),
+    runId: integer("run_id")
+      .references(() => pipelineRuns.id, { onDelete: "cascade" })
+      .notNull(),
+    sheetName: text("sheet_name").notNull(),
+    rowNumber: integer("row_number").notNull(),
+    reason: text("reason").notNull(),
+    rawData: jsonb("raw_data").$type<any[] | null>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    runIdx: index("pipeline_skipped_rows_run_idx").on(table.runId),
   })
 );
 
@@ -357,8 +349,6 @@ export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type Supplier = typeof suppliers.$inferSelect;
 export type NewSupplier = typeof suppliers.$inferInsert;
-export type SupplierCompanyLink = typeof supplierCompanyLinks.$inferSelect;
-export type NewSupplierCompanyLink = typeof supplierCompanyLinks.$inferInsert;
 export type Contract = typeof contracts.$inferSelect;
 export type NewContract = typeof contracts.$inferInsert;
 export type ContractSupplierSearch =
@@ -374,5 +364,7 @@ export type PipelineRunStage = typeof pipelineRunStages.$inferSelect;
 export type NewPipelineRunStage = typeof pipelineRunStages.$inferInsert;
 export type PipelineRunLog = typeof pipelineRunLogs.$inferSelect;
 export type NewPipelineRunLog = typeof pipelineRunLogs.$inferInsert;
+export type PipelineSkippedRow = typeof pipelineSkippedRows.$inferSelect;
+export type NewPipelineSkippedRow = typeof pipelineSkippedRows.$inferInsert;
 export type AuditLog = typeof auditLog.$inferSelect;
 export type NewAuditLog = typeof auditLog.$inferInsert;

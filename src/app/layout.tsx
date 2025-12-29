@@ -1,3 +1,5 @@
+import "./globals.css";
+
 export const metadata = {
   title: "NHS Spend Explorer",
   description: "Explore NHS spending data imported via Drizzle ORM.",

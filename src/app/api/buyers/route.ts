@@ -34,7 +34,7 @@ export async function GET(request: Request) {
         o.id,
         o.name,
         COALESCE(SUM(se.amount), 0) as total_spend,
-        COUNT(DISTINCT se.supplier) as supplier_count
+        COUNT(DISTINCT se.raw_supplier) as supplier_count
       FROM organisations o
       LEFT JOIN spend_entries se ON o.id = se.organisation_id ${
         dateFilter
@@ -76,12 +76,12 @@ export async function GET(request: Request) {
             o.name,
             o.trust_type,
             COALESCE(SUM(se.amount), 0) as total_spend,
-            COUNT(DISTINCT se.supplier) as supplier_count,
+            COUNT(DISTINCT se.raw_supplier) as supplier_count,
             (
-              SELECT supplier 
+              SELECT raw_supplier 
               FROM spend_entries se2 
               WHERE se2.organisation_id = o.id ${sql.raw(dateFilterForSubquery)}
-              GROUP BY supplier 
+              GROUP BY raw_supplier 
               ORDER BY SUM(amount) DESC 
               LIMIT 1
             ) as top_supplier
@@ -105,12 +105,12 @@ export async function GET(request: Request) {
             o.name,
             o.trust_type,
             COALESCE(SUM(se.amount), 0) as total_spend,
-            COUNT(DISTINCT se.supplier) as supplier_count,
+            COUNT(DISTINCT se.raw_supplier) as supplier_count,
             (
-              SELECT supplier 
+              SELECT raw_supplier 
               FROM spend_entries se2 
               WHERE se2.organisation_id = o.id ${dateFilterForSubquery}
-              GROUP BY supplier 
+              GROUP BY raw_supplier 
               ORDER BY SUM(amount) DESC 
               LIMIT 1
             ) as top_supplier

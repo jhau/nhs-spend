@@ -50,7 +50,7 @@ export async function GET(request: Request) {
         o.latitude,
         o.longitude,
         COALESCE(SUM(se.amount), 0) as total_spend,
-        COUNT(DISTINCT se.supplier) as supplier_count,
+        COUNT(DISTINCT se.raw_supplier) as supplier_count,
         COUNT(DISTINCT DATE_TRUNC('month', se.payment_date)) as active_months
       FROM organisations o
       LEFT JOIN spend_entries se ON o.id = se.organisation_id ${dateFilter ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'` : ""}
@@ -189,13 +189,13 @@ export async function GET(request: Request) {
       // Get top suppliers for this region
       const topSuppliersRes = await db.execute(sql.raw(`
         SELECT 
-          se.supplier,
+          se.raw_supplier,
           SUM(se.amount) as total_spend
         FROM spend_entries se
         JOIN organisations o ON o.id = se.organisation_id
         WHERE o.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
         ${dateFilter}
-        GROUP BY se.supplier
+        GROUP BY se.raw_supplier
         ORDER BY total_spend DESC
         LIMIT 5
       `));
@@ -206,7 +206,7 @@ export async function GET(request: Request) {
         activeBuyers: data.buyers,
         topBuyers: data.organisations.sort((a, b) => b.spend - a.spend).slice(0, 5),
         topSuppliers: (topSuppliersRes.rows as any[]).map(s => ({
-          name: s.supplier,
+          name: s.raw_supplier,
           spend: parseFloat(s.total_spend),
         })),
         spendLevel: data.totalSpend > 20_000_000_000 ? "high" : data.totalSpend > 5_000_000_000 ? "medium" : "low",

@@ -1,25 +1,33 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, count, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
+  companies,
   pipelineAssets,
   pipelineRunLogs,
   pipelineRunStages,
   pipelineRuns,
+  pipelineSkippedRows,
+  spendEntries,
+  suppliers,
 } from "@/db/schema";
 
 import type { PipelineLogLevel } from "./types";
 
 export async function createPipelineRun(input: {
-  assetId: number;
+  assetId?: number | null;
   dryRun: boolean;
   createdBy?: string | null;
+  fromStageId?: string;
+  toStageId?: string;
 }): Promise<{ runId: number }> {
   const [row] = await db
     .insert(pipelineRuns)
     .values({
-      assetId: input.assetId,
+      assetId: input.assetId ?? null,
       dryRun: input.dryRun,
+      fromStageId: input.fromStageId ?? null,
+      toStageId: input.toStageId ?? null,
       trigger: "web",
       createdBy: input.createdBy ?? null,
       status: "queued",
@@ -121,5 +129,62 @@ export async function getRunLogs(runId: number, limit = 500) {
     .where(eq(pipelineRunLogs.runId, runId))
     .limit(limit);
   return rows;
+}
+
+export async function getSkippedRows(runId: number, limit = 1000, offset = 0) {
+  return await db
+    .select()
+    .from(pipelineSkippedRows)
+    .where(eq(pipelineSkippedRows.runId, runId))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function countSkippedRows(runId: number) {
+  const [row] = await db
+    .select({ count: count() })
+    .from(pipelineSkippedRows)
+    .where(eq(pipelineSkippedRows.runId, runId));
+  return row?.count ?? 0;
+}
+
+export async function getRunSuppliers(runId: number, limit = 50, offset = 0) {
+  const run = await getRun(runId);
+  if (!run || !run.assetId) return [];
+
+  return await db
+    .select({
+      id: suppliers.id,
+      name: suppliers.name,
+      matchStatus: suppliers.matchStatus,
+      matchConfidence: suppliers.matchConfidence,
+      companyId: suppliers.companyId,
+      companyName: companies.companyName,
+      companyNumber: companies.companyNumber,
+      createdAt: suppliers.createdAt,
+      updatedAt: suppliers.updatedAt,
+    })
+    .from(suppliers)
+    .innerJoin(spendEntries, eq(suppliers.id, spendEntries.supplierId))
+    .leftJoin(companies, eq(suppliers.companyId, companies.id))
+    .where(eq(spendEntries.assetId, run.assetId))
+    .groupBy(suppliers.id, companies.id)
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function countRunSuppliers(runId: number) {
+  const run = await getRun(runId);
+  if (!run || !run.assetId) return 0;
+
+  const [row] = await db
+    .select({
+      count: sql<number>`count(distinct ${suppliers.id})::int`,
+    })
+    .from(suppliers)
+    .innerJoin(spendEntries, eq(suppliers.id, spendEntries.supplierId))
+    .where(eq(spendEntries.assetId, run.assetId));
+
+  return row?.count ?? 0;
 }
 

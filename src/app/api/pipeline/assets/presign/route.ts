@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
 import { NextResponse } from "next/server";
+import { eq, and, isNotNull } from "drizzle-orm";
 
 import { db } from "@/db";
 import { pipelineAssets } from "@/db/schema";
@@ -11,6 +12,7 @@ type PresignRequest = {
   contentType?: string;
   sizeBytes: number;
   checksum?: string;
+  force?: boolean; // If true, proceed even if duplicate checksum exists
 };
 
 export async function POST(req: Request) {
@@ -21,6 +23,31 @@ export async function POST(req: Request) {
   }
   if (!Number.isFinite(body.sizeBytes) || body.sizeBytes <= 0) {
     return NextResponse.json({ error: "sizeBytes must be > 0" }, { status: 400 });
+  }
+
+  // Check for duplicate checksum if provided
+  if (body.checksum && !body.force) {
+    const existingAssets = await db
+      .select({
+        id: pipelineAssets.id,
+        originalName: pipelineAssets.originalName,
+        sizeBytes: pipelineAssets.sizeBytes,
+        createdAt: pipelineAssets.createdAt,
+      })
+      .from(pipelineAssets)
+      .where(and(eq(pipelineAssets.checksum, body.checksum), isNotNull(pipelineAssets.checksum)))
+      .limit(5);
+
+    if (existingAssets.length > 0) {
+      return NextResponse.json(
+        {
+          error: "duplicate_checksum",
+          message: "An asset with the same checksum already exists",
+          duplicateAssets: existingAssets,
+        },
+        { status: 409 }
+      );
+    }
   }
 
   const safeName = body.originalName.replace(/[^\w.\-() ]+/gu, "_").slice(0, 200);

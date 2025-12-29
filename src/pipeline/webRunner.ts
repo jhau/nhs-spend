@@ -2,15 +2,15 @@ import { db } from "@/db";
 
 import { runStages } from "./runner";
 import {
-  appendRunLog,
   ensureRunStageRow,
   getRun,
   setPipelineRunStatus,
   setRunStageStatus,
 } from "./pipelineDb";
-import { importSpendExcelStage } from "./stages";
+import { createPipelineLogger } from "./logger";
+import { importSpendExcelStage, matchSuppliersStage } from "./stages";
 
-const stages = [importSpendExcelStage];
+const stages = [importSpendExcelStage, matchSuppliersStage];
 
 const queue: number[] = [];
 let isProcessing = false;
@@ -37,20 +37,29 @@ async function processQueue() {
 
 async function runOne(runId: number) {
   const run = await getRun(runId);
-  if (!run) return;
+  if (!run) {
+    return;
+  }
 
-  const log = async (entry: {
-    level: "debug" | "info" | "warn" | "error";
-    message: string;
-    meta?: Record<string, unknown>;
-  }) => {
-    await appendRunLog({ runId, ...entry });
-  };
+  const logger = createPipelineLogger(runId);
+  const startTime = Date.now();
+
+  await logger.log({
+    level: "info",
+    message: `Pipeline run started`,
+    meta: { runId, assetId: run.assetId, dryRun: run.dryRun },
+  });
 
   await setPipelineRunStatus(runId, {
     status: "running",
     startedAt: new Date(),
     finishedAt: null,
+  });
+
+  await logger.log({
+    level: "debug",
+    message: `Initializing ${stages.length} pipeline stage(s)`,
+    meta: { stageIds: stages.map((s) => s.id) },
   });
 
   for (const stage of stages) {
@@ -63,8 +72,13 @@ async function runOne(runId: number) {
         runId,
         dryRun: run.dryRun,
         db,
-        log,
+        log: logger.log,
         onStageStart: async (stageId) => {
+          await logger.log({
+            level: "info",
+            message: `Stage starting: ${stageId}`,
+            meta: { stageId },
+          });
           await setRunStageStatus(runId, stageId, {
             status: "running",
             startedAt: new Date(),
@@ -73,6 +87,11 @@ async function runOne(runId: number) {
           });
         },
         onStageFinish: async (stageId, result) => {
+          await logger.log({
+            level: "info",
+            message: `Stage completed: ${stageId}`,
+            meta: { stageId, status: result.status, metrics: result.metrics },
+          });
           await setRunStageStatus(runId, stageId, {
             status: result.status,
             finishedAt: new Date(),
@@ -80,26 +99,56 @@ async function runOne(runId: number) {
           });
         },
         onStageError: async (stageId, error) => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          await logger.log({
+            level: "error",
+            message: `Stage failed: ${stageId}`,
+            meta: { stageId, error: errorMessage, stack: errorStack },
+          });
           await setRunStageStatus(runId, stageId, {
             status: "failed",
             finishedAt: new Date(),
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
           });
         },
       },
       stages,
-      { assetId: run.assetId }
+      { 
+        assetId: run.assetId as number,
+        limit: 100, // Default limit for matching if applicable
+        autoMatchThreshold: 0.9,
+        minSimilarityThreshold: 0.5
+      },
+      {
+        fromStageId: run.fromStageId ?? undefined,
+        toStageId: run.toStageId ?? undefined,
+      }
     );
 
+    const duration = Date.now() - startTime;
+    await logger.log({
+      level: "info",
+      message: `Pipeline run succeeded`,
+      meta: { runId, durationMs: duration },
+    });
     await setPipelineRunStatus(runId, {
       status: "succeeded",
       finishedAt: new Date(),
     });
   } catch (error) {
-    await log({
+    const duration = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    await logger.log({
       level: "error",
       message: "Pipeline run failed",
-      meta: { error: error instanceof Error ? error.message : String(error) },
+      meta: {
+        runId,
+        durationMs: duration,
+        error: errorMessage,
+        stack: errorStack,
+      },
     });
     await setPipelineRunStatus(runId, {
       status: "failed",

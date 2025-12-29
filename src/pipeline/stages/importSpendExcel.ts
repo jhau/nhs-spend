@@ -2,10 +2,20 @@ import { eq } from "drizzle-orm";
 import { read, utils, type WorkBook } from "xlsx";
 
 import type { DbClient } from "@/db";
-import { organisations, pipelineAssets, spendEntries } from "@/db/schema";
+import {
+  organisations,
+  pipelineAssets,
+  pipelineSkippedRows,
+  spendEntries,
+  suppliers,
+} from "@/db/schema";
 
 import { presignObjectUrl } from "../objectStorage";
-import type { PipelineStage } from "../types";
+import type {
+  PipelineContext,
+  PipelineLogLevel,
+  PipelineStage,
+} from "../types";
 
 export type ImportSpendExcelInput = {
   /**
@@ -38,10 +48,16 @@ type SyncTrustsResult = {
   createdWithoutMetadata: number;
 };
 
+type SyncSuppliersResult = {
+  idByKey: Map<string, number>;
+  inserted: number;
+};
+
 type ImportSummary = {
   sheetsProcessed: number;
   paymentsInserted: number;
   paymentsSkipped: number;
+  skippedReasons: Record<string, number>;
   warnings: string[];
 };
 
@@ -71,6 +87,12 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
     }
   },
   async run(ctx, input) {
+    await ctx.log({
+      level: "info",
+      message: `Starting import process`,
+      meta: { assetId: input.assetId, truncateAll: input.truncateAll ?? false },
+    });
+
     const asset = await ctx.db
       .select()
       .from(pipelineAssets)
@@ -86,6 +108,16 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
     }
 
     const objectKey = asset[0].objectKey;
+    await ctx.log({
+      level: "debug",
+      message: `Retrieved asset metadata`,
+      meta: {
+        assetId: input.assetId,
+        objectKey,
+        originalName: asset[0].originalName,
+        sizeBytes: asset[0].sizeBytes,
+      },
+    });
 
     await ctx.log({
       level: "info",
@@ -93,6 +125,7 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       meta: { assetId: input.assetId, objectKey },
     });
 
+    const downloadStartTime = Date.now();
     const downloadUrl = presignObjectUrl({
       method: "GET",
       objectKey,
@@ -110,12 +143,61 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
     }
 
     const buffer = Buffer.from(await resp.arrayBuffer());
-    const workbook = read(buffer, { type: "buffer", cellDates: true });
+    const downloadDuration = Date.now() - downloadStartTime;
+    await ctx.log({
+      level: "debug",
+      message: `Download completed`,
+      meta: {
+        assetId: input.assetId,
+        sizeBytes: buffer.length,
+        durationMs: downloadDuration,
+      },
+    });
 
-    const metadataMap = parseTrustMetadata(workbook);
+    await ctx.log({
+      level: "info",
+      message: `Parsing Excel workbook`,
+      meta: { assetId: input.assetId },
+    });
+    const parseStartTime = Date.now();
+    const workbook = read(buffer, { type: "buffer", cellDates: true });
+    const parseDuration = Date.now() - parseStartTime;
+
+    await ctx.log({
+      level: "info",
+      message: `Workbook parsed successfully`,
+      meta: {
+        assetId: input.assetId,
+        sheetCount: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        durationMs: parseDuration,
+      },
+    });
+
+    await ctx.log({
+      level: "debug",
+      message: `Parsing trust metadata`,
+      meta: { assetId: input.assetId },
+    });
+    const metadataMap = await parseTrustMetadata(workbook, ctx);
+    await ctx.log({
+      level: "info",
+      message: `Trust metadata parsed`,
+      meta: { assetId: input.assetId, metadataCount: metadataMap.size },
+    });
+
     const dataSheetNames = workbook.SheetNames.filter(
       (name) => name.trim().toLowerCase() !== "trusts"
     );
+    await ctx.log({
+      level: "debug",
+      message: `Identified data sheets`,
+      meta: {
+        assetId: input.assetId,
+        dataSheetCount: dataSheetNames.length,
+        dataSheetNames,
+      },
+    });
 
     if (dataSheetNames.length === 0) {
       await ctx.log({
@@ -125,15 +207,35 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       });
       return {
         status: "skipped",
-        metrics: { sheetsProcessed: 0, paymentsInserted: 0, paymentsSkipped: 0 },
+        metrics: {
+          sheetsProcessed: 0,
+          paymentsInserted: 0,
+          paymentsSkipped: 0,
+        },
       };
     }
 
-    const discoveredTrusts = gatherTrustNames(
+    await ctx.log({
+      level: "debug",
+      message: `Gathering trust and supplier names from data sheets`,
+      meta: { assetId: input.assetId },
+    });
+    const { discoveredTrusts, discoveredSuppliers } = await gatherNames(
       workbook,
       dataSheetNames,
-      metadataMap
+      metadataMap,
+      ctx
     );
+    await ctx.log({
+      level: "info",
+      message: `Names gathered`,
+      meta: {
+        assetId: input.assetId,
+        discoveredTrustCount: discoveredTrusts.size,
+        discoveredSupplierCount: discoveredSuppliers.size,
+        trustsWithMetadata: metadataMap.size,
+      },
+    });
 
     if (ctx.dryRun) {
       await ctx.log({
@@ -144,6 +246,7 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
           sheets: dataSheetNames.length,
           trustsMetadata: metadataMap.size,
           trustsDiscovered: discoveredTrusts.size,
+          suppliersDiscovered: discoveredSuppliers.size,
         },
       });
       return {
@@ -153,12 +256,23 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
           sheets: dataSheetNames.length,
           trustsMetadata: metadataMap.size,
           trustsDiscovered: discoveredTrusts.size,
+          suppliersDiscovered: discoveredSuppliers.size,
         },
       };
     }
 
+    await ctx.log({
+      level: "info",
+      message: `Starting database transaction`,
+      meta: { assetId: input.assetId, truncateAll: input.truncateAll ?? false },
+    });
+    const transactionStartTime = Date.now();
     const result = await ctx.db.transaction(async (tx) => {
       if (input.truncateAll) {
+        await ctx.log({
+          level: "warn",
+          message: "Truncating all spend entries and organisations",
+        });
         await tx.delete(spendEntries);
         await tx.delete(organisations);
         await ctx.log({
@@ -166,22 +280,113 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
           message: "Truncated all spend entries and organisations",
         });
       } else {
-        await tx
+        await ctx.log({
+          level: "debug",
+          message: `Deleting existing spend entries for asset`,
+          meta: { assetId: input.assetId },
+        });
+        const deleteResult = await tx
           .delete(spendEntries)
           .where(eq(spendEntries.assetId, input.assetId));
+        await ctx.log({
+          level: "debug",
+          message: `Deleted existing spend entries for asset`,
+          meta: { assetId: input.assetId },
+        });
       }
 
-      const syncResult = await syncTrusts(tx, metadataMap, discoveredTrusts);
+      await ctx.log({
+        level: "info",
+        message: `Synchronizing trusts/organisations`,
+        meta: {
+          metadataCount: metadataMap.size,
+          discoveredCount: discoveredTrusts.size,
+        },
+      });
+      const syncTrustsStartTime = Date.now();
+      const trustSyncResult = await syncTrusts(
+        tx,
+        metadataMap,
+        discoveredTrusts,
+        ctx
+      );
+      const syncTrustsDuration = Date.now() - syncTrustsStartTime;
+      await ctx.log({
+        level: "info",
+        message: `Trusts synchronized`,
+        meta: {
+          inserted: trustSyncResult.inserted,
+          updated: trustSyncResult.updated,
+          createdWithoutMetadata: trustSyncResult.createdWithoutMetadata,
+          totalTrusts: trustSyncResult.idByKey.size,
+          durationMs: syncTrustsDuration,
+        },
+      });
 
+      await ctx.log({
+        level: "info",
+        message: `Synchronizing suppliers`,
+        meta: {
+          discoveredCount: discoveredSuppliers.size,
+        },
+      });
+      const syncSuppliersStartTime = Date.now();
+      const supplierSyncResult = await syncSuppliers(
+        tx,
+        discoveredSuppliers,
+        ctx
+      );
+      const syncSuppliersDuration = Date.now() - syncSuppliersStartTime;
+      await ctx.log({
+        level: "info",
+        message: `Suppliers synchronized`,
+        meta: {
+          inserted: supplierSyncResult.inserted,
+          totalSuppliers: supplierSyncResult.idByKey.size,
+          durationMs: syncSuppliersDuration,
+        },
+      });
+
+      await ctx.log({
+        level: "info",
+        message: `Importing spend data from sheets`,
+        meta: {
+          sheetCount: dataSheetNames.length,
+          totalTrusts: trustSyncResult.idByKey.size,
+          totalSuppliers: supplierSyncResult.idByKey.size,
+        },
+      });
+      const importStartTime = Date.now();
       const importSummary = await importSpendSheets(
         tx,
         workbook,
         dataSheetNames,
-        syncResult.idByKey,
-        input.assetId
+        trustSyncResult.idByKey,
+        supplierSyncResult.idByKey,
+        input.assetId,
+        ctx
       );
+      const importDuration = Date.now() - importStartTime;
+      await ctx.log({
+        level: "info",
+        message: `Spend data import completed`,
+        meta: {
+          sheetsProcessed: importSummary.sheetsProcessed,
+          paymentsInserted: importSummary.paymentsInserted,
+          paymentsSkipped: importSummary.paymentsSkipped,
+          skippedReasons: importSummary.skippedReasons,
+          warnings: importSummary.warnings.length,
+          durationMs: importDuration,
+        },
+      });
 
-      return { syncResult, importSummary };
+      return { trustSyncResult, supplierSyncResult, importSummary };
+    });
+    const transactionDuration = Date.now() - transactionStartTime;
+    await ctx.log({
+      level: "info",
+      message: `Database transaction committed`,
+      meta: { assetId: input.assetId, durationMs: transactionDuration },
     });
 
     return {
@@ -189,12 +394,15 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       warnings: result.importSummary.warnings,
       metrics: {
         assetId: input.assetId,
-        trustsInserted: result.syncResult.inserted,
-        trustsUpdated: result.syncResult.updated,
-        trustsCreatedWithoutMetadata: result.syncResult.createdWithoutMetadata,
+        trustsInserted: result.trustSyncResult.inserted,
+        trustsUpdated: result.trustSyncResult.updated,
+        trustsCreatedWithoutMetadata:
+          result.trustSyncResult.createdWithoutMetadata,
+        suppliersInserted: result.supplierSyncResult.inserted,
         sheetsProcessed: result.importSummary.sheetsProcessed,
         paymentsInserted: result.importSummary.paymentsInserted,
         paymentsSkipped: result.importSummary.paymentsSkipped,
+        skippedReasons: result.importSummary.skippedReasons,
       },
     };
   },
@@ -217,27 +425,63 @@ function undefinedIfEmpty(value: string): string | undefined {
   return value ? value : undefined;
 }
 
-function parseTrustMetadata(workbook: WorkBook): Map<string, TrustMetadata> {
+async function parseTrustMetadata(
+  workbook: WorkBook,
+  ctx: PipelineContext
+): Promise<Map<string, TrustMetadata>> {
   const sheetName = workbook.SheetNames.find(
     (name) => name.trim().toLowerCase() === "trusts"
   );
-  if (!sheetName) return new Map();
+  if (!sheetName) {
+    await ctx.log({
+      level: "debug",
+      message: "No 'trusts' sheet found in workbook",
+    });
+    return new Map();
+  }
 
   const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return new Map();
+  if (!sheet) {
+    await ctx.log({
+      level: "debug",
+      message: "Trusts sheet exists but is empty",
+      meta: { sheetName },
+    });
+    return new Map();
+  }
 
   const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
     header: 1,
     defval: null,
     raw: true,
   });
-  if (rows.length === 0) return new Map();
+  if (rows.length === 0) {
+    await ctx.log({
+      level: "debug",
+      message: "Trusts sheet has no rows",
+      meta: { sheetName },
+    });
+    return new Map();
+  }
+
+  await ctx.log({
+    level: "debug",
+    message: "Parsing trust metadata rows",
+    meta: { sheetName, rowCount: rows.length },
+  });
 
   const metadata = new Map<string, TrustMetadata>();
   const header = rows[0].map((value) => cleanString(value).toLowerCase());
 
   const nameIndex = header.findIndex((cell) => cell.includes("trust name"));
-  if (nameIndex === -1) return metadata;
+  if (nameIndex === -1) {
+    void ctx.log({
+      level: "warn",
+      message: "No 'trust name' column found in trusts sheet",
+      meta: { sheetName, headers: header },
+    });
+    return metadata;
+  }
 
   const indexFor = (label: string) =>
     header.findIndex((cell) => cell.includes(label));
@@ -249,12 +493,21 @@ function parseTrustMetadata(workbook: WorkBook): Map<string, TrustMetadata> {
   const missingDataIdx = indexFor("missing data");
   const verifiedViaIdx = indexFor("verified via");
 
+  let parsedCount = 0;
+  let skippedCount = 0;
+
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!Array.isArray(row)) continue;
+    if (!Array.isArray(row)) {
+      skippedCount++;
+      continue;
+    }
 
     const name = cleanString(row[nameIndex]);
-    if (!name || name.toLowerCase() === "trust name") continue;
+    if (!name || name.toLowerCase() === "trust name") {
+      skippedCount++;
+      continue;
+    }
 
     const record: TrustMetadata = {
       name,
@@ -289,21 +542,40 @@ function parseTrustMetadata(workbook: WorkBook): Map<string, TrustMetadata> {
     };
 
     metadata.set(normaliseTrustName(name), record);
+    parsedCount++;
   }
+
+  await ctx.log({
+    level: "debug",
+    message: "Trust metadata parsing completed",
+    meta: { parsedCount, skippedCount, totalMetadata: metadata.size },
+  });
 
   return metadata;
 }
 
-function gatherTrustNames(
+async function gatherNames(
   workbook: WorkBook,
   sheetNames: string[],
-  metadataMap: Map<string, TrustMetadata>
-): Map<string, string> {
-  const discovered = new Map<string, string>();
+  metadataMap: Map<string, TrustMetadata>,
+  ctx: PipelineContext
+): Promise<{
+  discoveredTrusts: Map<string, string>;
+  discoveredSuppliers: Set<string>;
+}> {
+  const discoveredTrusts = new Map<string, string>();
+  const discoveredSuppliers = new Set<string>();
 
   for (const sheetName of sheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    if (!sheet) continue;
+    if (!sheet) {
+      await ctx.log({
+        level: "debug",
+        message: `Sheet not found, skipping`,
+        meta: { sheetName },
+      });
+      continue;
+    }
 
     const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
       header: 1,
@@ -311,38 +583,136 @@ function gatherTrustNames(
       raw: true,
     });
 
+    let trustCountInSheet = 0;
+    let supplierCountInSheet = 0;
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       if (!Array.isArray(row)) continue;
 
+      // Trust name is in column 0
       const trustNameRaw = cleanString(row[0]);
-      if (!trustNameRaw || isHeaderTrustLabel(trustNameRaw)) continue;
-
-      const key = normaliseTrustName(trustNameRaw);
-      if (!discovered.has(key)) {
-        const metadataName = metadataMap.get(key)?.name ?? trustNameRaw;
-        discovered.set(key, metadataName);
+      if (trustNameRaw && !isHeaderTrustLabel(trustNameRaw)) {
+        const key = normaliseTrustName(trustNameRaw);
+        if (!discoveredTrusts.has(key)) {
+          const metadataName = metadataMap.get(key)?.name ?? trustNameRaw;
+          discoveredTrusts.set(key, metadataName);
+          trustCountInSheet++;
+        }
       }
+
+      // Supplier name is in column 2
+      const supplierNameRaw = cleanString(row[2]);
+      if (supplierNameRaw && !discoveredSuppliers.has(supplierNameRaw)) {
+        discoveredSuppliers.add(supplierNameRaw);
+        supplierCountInSheet++;
+      }
+    }
+
+    await ctx.log({
+      level: "debug",
+      message: `Processed sheet for names`,
+      meta: {
+        sheetName,
+        rowCount: rows.length,
+        newTrustsFound: trustCountInSheet,
+        newSuppliersFound: supplierCountInSheet,
+      },
+    });
+  }
+
+  return { discoveredTrusts, discoveredSuppliers };
+}
+
+async function syncSuppliers(
+  client: any,
+  discoveredSuppliers: Set<string>,
+  ctx: {
+    log: (entry: {
+      level: PipelineLogLevel;
+      message: string;
+      meta?: Record<string, unknown>;
+    }) => Promise<void> | void;
+  }
+): Promise<SyncSuppliersResult> {
+  await ctx.log({
+    level: "debug",
+    message: "Loading existing suppliers from database",
+  });
+  const existing = await client.select().from(suppliers);
+  const idByKey = new Map<string, number>();
+  for (const row of existing) {
+    idByKey.set(row.name, row.id);
+  }
+  await ctx.log({
+    level: "debug",
+    message: "Loaded existing suppliers",
+    meta: { existingCount: idByKey.size },
+  });
+
+  let inserted = 0;
+  const newSuppliers = Array.from(discoveredSuppliers).filter(
+    (name) => !idByKey.has(name)
+  );
+
+  if (newSuppliers.length > 0) {
+    await ctx.log({
+      level: "debug",
+      message: `Inserting ${newSuppliers.length} new suppliers`,
+    });
+
+    // Insert in batches of 100
+    for (let i = 0; i < newSuppliers.length; i += 100) {
+      const batch = newSuppliers.slice(i, i + 100);
+      const created = await client
+        .insert(suppliers)
+        .values(batch.map((name) => ({ name })))
+        .returning({ id: suppliers.id, name: suppliers.name });
+
+      for (const row of created) {
+        idByKey.set(row.name, row.id);
+      }
+      inserted += created.length;
     }
   }
 
-  return discovered;
+  return { idByKey, inserted };
 }
 
 async function syncTrusts(
-  client: DbClient,
+  client: any,
   metadataMap: Map<string, TrustMetadata>,
-  discoveredTrusts: Map<string, string>
+  discoveredTrusts: Map<string, string>,
+  ctx: {
+    log: (entry: {
+      level: PipelineLogLevel;
+      message: string;
+      meta?: Record<string, unknown>;
+    }) => Promise<void> | void;
+  }
 ): Promise<SyncTrustsResult> {
+  await ctx.log({
+    level: "debug",
+    message: "Loading existing organisations from database",
+  });
   const existing = await client.select().from(organisations);
   const idByKey = new Map<string, number>();
   for (const row of existing) {
     idByKey.set(normaliseTrustName(row.name), row.id);
   }
+  await ctx.log({
+    level: "debug",
+    message: "Loaded existing organisations",
+    meta: { existingCount: idByKey.size },
+  });
 
   let inserted = 0;
   let updated = 0;
 
+  await ctx.log({
+    level: "debug",
+    message: "Syncing trusts with metadata",
+    meta: { metadataCount: metadataMap.size },
+  });
   for (const [key, metadata] of metadataMap) {
     const payloadForInsert = buildOrganisationInsert(metadata);
     const payloadForUpdate = buildOrganisationUpdate(metadata);
@@ -364,6 +734,11 @@ async function syncTrusts(
     }
   }
 
+  await ctx.log({
+    level: "debug",
+    message: "Creating trusts without metadata",
+    meta: { discoveredCount: discoveredTrusts.size },
+  });
   let createdWithoutMetadata = 0;
   for (const [key, name] of discoveredTrusts) {
     if (idByKey.has(key)) continue;
@@ -414,34 +789,90 @@ function buildOrganisationUpdate(metadata: TrustMetadata) {
 }
 
 async function importSpendSheets(
-  client: DbClient,
+  client: any,
   workbook: WorkBook,
   sheetNames: string[],
   trustIdByKey: Map<string, number>,
-  assetId: number
+  supplierIdByKey: Map<string, number>,
+  assetId: number,
+  ctx: PipelineContext
 ): Promise<ImportSummary> {
   const warnings: string[] = [];
+  const skippedReasons: Record<string, number> = {};
+  const skippedRows: (typeof pipelineSkippedRows.$inferInsert)[] = [];
   let paymentsInserted = 0;
   let paymentsSkipped = 0;
   let sheetsProcessed = 0;
 
+  const flushSkippedRows = async () => {
+    if (skippedRows.length === 0) return;
+    await client.insert(pipelineSkippedRows).values(skippedRows);
+    skippedRows.length = 0;
+  };
+
   for (const sheetName of sheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    if (!sheet) continue;
+    if (!sheet) {
+      await ctx.log({
+        level: "warn",
+        message: `Sheet not found, skipping`,
+        meta: { sheetName },
+      });
+      continue;
+    }
 
     sheetsProcessed++;
+    await ctx.log({
+      level: "info",
+      message: `Processing sheet ${sheetsProcessed}/${sheetNames.length}`,
+      meta: {
+        sheetName,
+        sheetIndex: sheetsProcessed,
+        totalSheets: sheetNames.length,
+      },
+    });
+
+    const sheetStartTime = Date.now();
     const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
       header: 1,
       defval: null,
       raw: true,
     });
-    if (rows.length <= 1) continue;
+    if (rows.length <= 1) {
+      void ctx.log({
+        level: "warn",
+        message: `Sheet has no data rows, skipping`,
+        meta: { sheetName, rowCount: rows.length },
+      });
+      continue;
+    }
+
+    await ctx.log({
+      level: "debug",
+      message: `Parsed sheet rows`,
+      meta: { sheetName, rowCount: rows.length },
+    });
 
     const batch: (typeof spendEntries.$inferInsert)[] = [];
+    let sheetPaymentsInserted = 0;
+    let sheetPaymentsSkipped = 0;
     const flushBatch = async () => {
       if (batch.length === 0) return;
+      const batchStartTime = Date.now();
       await client.insert(spendEntries).values(batch);
       paymentsInserted += batch.length;
+      sheetPaymentsInserted += batch.length;
+      const batchDuration = Date.now() - batchStartTime;
+      await ctx.log({
+        level: "debug",
+        message: `Batch inserted`,
+        meta: {
+          sheetName,
+          batchSize: batch.length,
+          totalInserted: paymentsInserted,
+          durationMs: batchDuration,
+        },
+      });
       batch.length = 0;
     };
 
@@ -452,10 +883,18 @@ async function importSpendSheets(
       const trustNameRaw = cleanString(row[0]);
       if (!trustNameRaw) {
         paymentsSkipped++;
-        recordWarning(
-          warnings,
-          `(${sheetName} row ${rowIndex + 1}) missing trust name`
-        );
+        sheetPaymentsSkipped++;
+        const reason = "missing trust name";
+        skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
+        skippedRows.push({
+          runId: ctx.runId,
+          sheetName,
+          rowNumber: rowIndex + 1,
+          reason,
+          rawData: row,
+        });
+        if (skippedRows.length >= 500) await flushSkippedRows();
+        recordWarning(warnings, `(${sheetName} row ${rowIndex + 1}) ${reason}`);
         continue;
       }
       if (isHeaderTrustLabel(trustNameRaw)) {
@@ -466,51 +905,82 @@ async function importSpendSheets(
       const trustId = trustIdByKey.get(trustKey);
       if (!trustId) {
         paymentsSkipped++;
-        recordWarning(
-          warnings,
-          `(${sheetName} row ${rowIndex + 1}) unknown trust '${trustNameRaw}'`
-        );
+        sheetPaymentsSkipped++;
+        const reason = `unknown trust '${trustNameRaw}'`;
+        skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
+        skippedRows.push({
+          runId: ctx.runId,
+          sheetName,
+          rowNumber: rowIndex + 1,
+          reason,
+          rawData: row,
+        });
+        if (skippedRows.length >= 500) await flushSkippedRows();
+        recordWarning(warnings, `(${sheetName} row ${rowIndex + 1}) ${reason}`);
         continue;
       }
 
       const supplier = cleanString(row[2]);
       if (!supplier) {
         paymentsSkipped++;
-        recordWarning(
-          warnings,
-          `(${sheetName} row ${rowIndex + 1}) missing supplier`
-        );
+        sheetPaymentsSkipped++;
+        const reason = "missing supplier";
+        skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
+        skippedRows.push({
+          runId: ctx.runId,
+          sheetName,
+          rowNumber: rowIndex + 1,
+          reason,
+          rawData: row,
+        });
+        if (skippedRows.length >= 500) await flushSkippedRows();
+        recordWarning(warnings, `(${sheetName} row ${rowIndex + 1}) ${reason}`);
         continue;
       }
+
+      const supplierId = supplierIdByKey.get(supplier);
 
       const amountResult = parseAmount(row[3]);
       if (amountResult.amount === null) {
         paymentsSkipped++;
-        recordWarning(
-          warnings,
-          `(${sheetName} row ${rowIndex + 1}) invalid amount '${
-            amountResult.raw ?? ""
-          }'`
-        );
+        sheetPaymentsSkipped++;
+        const reason = `invalid amount '${amountResult.raw ?? ""}'`;
+        skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
+        skippedRows.push({
+          runId: ctx.runId,
+          sheetName,
+          rowNumber: rowIndex + 1,
+          reason,
+          rawData: row,
+        });
+        if (skippedRows.length >= 500) await flushSkippedRows();
+        recordWarning(warnings, `(${sheetName} row ${rowIndex + 1}) ${reason}`);
         continue;
       }
 
       const dateResult = parsePaymentDate(row[1]);
       if (!dateResult.iso) {
         paymentsSkipped++;
-        recordWarning(
-          warnings,
-          `(${sheetName} row ${rowIndex + 1}) invalid payment date '${
-            dateResult.raw ?? ""
-          }'`
-        );
+        sheetPaymentsSkipped++;
+        const reason = `invalid payment date '${dateResult.raw ?? ""}'`;
+        skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
+        skippedRows.push({
+          runId: ctx.runId,
+          sheetName,
+          rowNumber: rowIndex + 1,
+          reason,
+          rawData: row,
+        });
+        if (skippedRows.length >= 500) await flushSkippedRows();
+        recordWarning(warnings, `(${sheetName} row ${rowIndex + 1}) ${reason}`);
         continue;
       }
 
       batch.push({
         assetId,
         organisationId: trustId,
-        supplier,
+        supplierId,
+        rawSupplier: supplier,
         amount: amountResult.amount.toFixed(2),
         paymentDate: dateResult.iso,
         rawAmount: amountResult.raw,
@@ -525,9 +995,41 @@ async function importSpendSheets(
     }
 
     await flushBatch();
+    const sheetDuration = Date.now() - sheetStartTime;
+    await ctx.log({
+      level: "info",
+      message: `Sheet processing completed`,
+      meta: {
+        sheetName,
+        paymentsInserted: sheetPaymentsInserted,
+        paymentsSkipped: sheetPaymentsSkipped,
+        totalRows: rows.length,
+        durationMs: sheetDuration,
+      },
+    });
   }
 
-  return { sheetsProcessed, paymentsInserted, paymentsSkipped, warnings };
+  await flushSkippedRows();
+
+  await ctx.log({
+    level: "info",
+    message: `All sheets processed`,
+    meta: {
+      sheetsProcessed,
+      totalPaymentsInserted: paymentsInserted,
+      totalPaymentsSkipped: paymentsSkipped,
+      totalWarnings: warnings.length,
+      skippedReasons,
+    },
+  });
+
+  return {
+    sheetsProcessed,
+    paymentsInserted,
+    paymentsSkipped,
+    warnings,
+    skippedReasons,
+  };
 }
 
 function recordWarning(warnings: string[], message: string) {
@@ -621,6 +1123,25 @@ function parsePaymentDate(value: unknown): {
     return { iso: formatDate(new Date(Date.UTC(year, month - 1, day))), raw };
   }
 
+  const dmyDashMatch = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/u);
+  if (dmyDashMatch) {
+    const day = Number.parseInt(dmyDashMatch[1], 10);
+    const month = Number.parseInt(dmyDashMatch[2], 10);
+    const year = Number.parseInt(dmyDashMatch[3], 10);
+    return { iso: formatDate(new Date(Date.UTC(year, month - 1, day))), raw };
+  }
+
+  const dMmmYMatch = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/u);
+  if (dMmmYMatch) {
+    const day = Number.parseInt(dMmmYMatch[1], 10);
+    const monthName = dMmmYMatch[2].toLowerCase();
+    const year = Number.parseInt(dMmmYMatch[3], 10);
+    const month = MONTH_LOOKUP.get(monthName);
+    if (month) {
+      return { iso: formatDate(new Date(Date.UTC(year, month - 1, day))), raw };
+    }
+  }
+
   const maybeNumber = Number(raw);
   if (!Number.isNaN(maybeNumber)) {
     const iso = formatExcelSerial(maybeNumber);
@@ -654,4 +1175,3 @@ function formatExcelSerial(serial: number): string | null {
 function pad(value: number): string {
   return value.toString().padStart(2, "0");
 }
-

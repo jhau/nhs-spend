@@ -7,20 +7,29 @@ import { createPipelineRun } from "@/pipeline/pipelineDb";
 import { enqueuePipelineRun } from "@/pipeline/webRunner";
 
 type CreateRunRequest = {
-  assetId: number;
+  assetId?: number;
   dryRun?: boolean;
+  fromStageId?: string;
+  toStageId?: string;
 };
 
 export async function POST(req: Request) {
   const body = (await req.json()) as CreateRunRequest;
-  const assetId = Number(body?.assetId);
+  const assetId = body?.assetId ? Number(body.assetId) : null;
   const dryRun = Boolean(body?.dryRun);
+  const fromStageId = body?.fromStageId;
+  const toStageId = body?.toStageId;
 
-  if (!Number.isInteger(assetId) || assetId <= 0) {
+  if (assetId !== null && (!Number.isInteger(assetId) || assetId <= 0)) {
     return NextResponse.json({ error: "assetId must be a positive integer" }, { status: 400 });
   }
 
-  const { runId } = await createPipelineRun({ assetId, dryRun });
+  const { runId } = await createPipelineRun({ 
+    assetId: assetId as any, // Cast because createPipelineRun might expect number
+    dryRun,
+    fromStageId,
+    toStageId
+  });
   enqueuePipelineRun(runId);
 
   return NextResponse.json({ runId });

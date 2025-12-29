@@ -51,12 +51,12 @@ interface SupplierGroup {
 async function getAllSuppliers(): Promise<{ supplier: string; count: number }[]> {
   const result = await db
     .select({
-      supplier: spendEntries.supplier,
+      supplier: spendEntries.rawSupplier,
       count: sql<number>`count(*)::int`,
     })
     .from(spendEntries)
-    .groupBy(spendEntries.supplier)
-    .orderBy(spendEntries.supplier);
+    .groupBy(spendEntries.rawSupplier)
+    .orderBy(spendEntries.rawSupplier);
 
   return result;
 }
@@ -200,9 +200,9 @@ async function main() {
     // Execute bulk update
     const updateResult = await client.query(`
       UPDATE spend_entries AS s
-      SET supplier = t.new_name
+      SET raw_supplier = t.new_name
       FROM temp_supplier_updates AS t
-      WHERE s.supplier = t.old_name
+      WHERE s.raw_supplier = t.old_name
     `);
 
     await client.query("COMMIT");

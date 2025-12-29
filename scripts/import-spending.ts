@@ -601,7 +601,7 @@ async function importSpendSheets(
       batch.push({
         assetId,
         organisationId: trustId,
-        supplier,
+        rawSupplier: supplier,
         amount: amountResult.amount.toFixed(2),
         paymentDate: dateResult.iso,
         rawAmount: amountResult.raw,

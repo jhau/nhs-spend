@@ -13,9 +13,9 @@ async function main() {
     console.log("Populating suppliers from spend_entries...");
     await db.execute(sql`
       INSERT INTO "suppliers" ("name")
-      SELECT DISTINCT "supplier" 
+      SELECT DISTINCT "raw_supplier" 
       FROM "spend_entries"
-      WHERE "supplier" IS NOT NULL
+      WHERE "raw_supplier" IS NOT NULL
       ON CONFLICT ("name") DO NOTHING;
     `);
 
@@ -50,7 +50,7 @@ async function main() {
       UPDATE "spend_entries" se
       SET "supplier_id" = s.id
       FROM "suppliers" s
-      WHERE se.supplier = s.name
+      WHERE se.raw_supplier = s.name
       AND se.supplier_id IS NULL;
     `);
 
@@ -58,14 +58,16 @@ async function main() {
     const remaining = await db.execute(sql`
       SELECT COUNT(*) as count FROM "spend_entries" WHERE "supplier_id" IS NULL;
     `);
-    
+
     const count = remaining.rows[0].count;
     if (Number(count) > 0) {
-        console.warn(`Warning: ${count} spend_entries records could not be linked to a supplier.`);
+      console.warn(
+        `Warning: ${count} spend_entries records could not be linked to a supplier.`
+      );
     } else {
-        console.log("All spend_entries successfully linked.");
+      console.log("All spend_entries successfully linked.");
     }
-    
+
     console.log("Migration completed successfully.");
   } catch (error) {
     console.error("Migration failed:", error);
