@@ -8,6 +8,58 @@
       "when": 1762506774764,
       "tag": "0000_magenta_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1764563822318,
+      "tag": "0001_chemical_ultragirl",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764644513179,
+      "tag": "0002_icy_mephisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1764646841204,
+      "tag": "0003_brief_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1764648107372,
+      "tag": "0004_light_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1764662388773,
+      "tag": "0005_chemical_strong_guy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1764726369905,
+      "tag": "0006_common_whistler",
+      "breakpoints": true
+<<<<<<< Current (Your changes)
+=======
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1767000000000,
+      "tag": "0007_pipeline_webui",
+      "breakpoints": true
+>>>>>>> Incoming (Background Agent changes)
     }
   ]
 }

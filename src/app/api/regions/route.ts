@@ -45,25 +45,92 @@ export async function GET(request: Request) {
         o.id,
         o.name,
         o.trust_type,
+        o.ods_code,
+        o.icb_ods_code,
+        o.latitude,
+        o.longitude,
         COALESCE(SUM(se.amount), 0) as total_spend,
         COUNT(DISTINCT se.supplier) as supplier_count,
         COUNT(DISTINCT DATE_TRUNC('month', se.payment_date)) as active_months
       FROM organisations o
       LEFT JOIN spend_entries se ON o.id = se.organisation_id ${dateFilter ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'` : ""}
       WHERE o.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
-      GROUP BY o.id, o.name, o.trust_type
+      GROUP BY o.id, o.name, o.trust_type, o.ods_code, o.icb_ods_code, o.latitude, o.longitude
       HAVING COALESCE(SUM(se.amount), 0) > 0
     `));
 
     // Group by region
+    interface OrgData {
+      id: number;
+      name: string;
+      spend: number;
+      supplierCount: number;
+      latitude: number | null;
+      longitude: number | null;
+      odsCode: string | null;
+      icbOdsCode: string | null;
+      isIcb: boolean;
+      trusts: OrgData[];
+    }
+
     const regionData: Record<string, {
       totalSpend: number;
       buyers: number;
       suppliers: Set<string>;
-      organisations: Array<{ id: number; name: string; spend: number; supplierCount: number }>;
+      organisations: OrgData[];
     }> = {};
 
+    // First pass: collect all organisations and group trusts by ICB ODS code
+    const allOrgs: OrgData[] = [];
+    const icbByOdsCode: Map<string, OrgData> = new Map();
+    const trustsByIcbOdsCode: Map<string, OrgData[]> = new Map();
+
     for (const org of orgsRes.rows as any[]) {
+      const isIcb = org.name.toUpperCase().includes(' ICB') || org.name.toUpperCase().includes('INTEGRATED CARE BOARD');
+      const orgData: OrgData = {
+        id: org.id,
+        name: org.name,
+        spend: parseFloat(org.total_spend) || 0,
+        supplierCount: parseInt(org.supplier_count) || 0,
+        latitude: org.latitude ? parseFloat(org.latitude) : null,
+        longitude: org.longitude ? parseFloat(org.longitude) : null,
+        odsCode: org.ods_code || null,
+        icbOdsCode: org.icb_ods_code || null,
+        isIcb,
+        trusts: [],
+      };
+      allOrgs.push(orgData);
+
+      if (isIcb && org.ods_code) {
+        icbByOdsCode.set(org.ods_code, orgData);
+      }
+
+      // Group trusts by their parent ICB ODS code
+      if (!isIcb && org.icb_ods_code) {
+        const trusts = trustsByIcbOdsCode.get(org.icb_ods_code) || [];
+        trusts.push(orgData);
+        trustsByIcbOdsCode.set(org.icb_ods_code, trusts);
+      }
+    }
+
+    // Second pass: assign trusts to their parent ICBs using icb_ods_code
+    // Track which trusts have been assigned to an ICB
+    const trustsWithParentIcb = new Set<number>();
+    
+    for (const [icbOdsCode, trusts] of trustsByIcbOdsCode.entries()) {
+      const parentIcb = icbByOdsCode.get(icbOdsCode);
+      if (parentIcb) {
+        parentIcb.trusts = trusts.sort((a, b) => b.spend - a.spend);
+        // Mark these trusts as having a parent ICB
+        for (const trust of trusts) {
+          trustsWithParentIcb.add(trust.id);
+        }
+      }
+    }
+
+    // Third pass: group by region
+    // Only add ICBs and standalone trusts (trusts without a parent ICB in data)
+    for (const org of allOrgs) {
       const region = getRegionFromName(org.name);
       if (!regionData[region]) {
         regionData[region] = {
@@ -73,27 +140,45 @@ export async function GET(request: Request) {
           organisations: [],
         };
       }
-      regionData[region].totalSpend += parseFloat(org.total_spend) || 0;
+      regionData[region].totalSpend += org.spend;
       regionData[region].buyers += 1;
-      regionData[region].organisations.push({
-        id: org.id,
-        name: org.name,
-        spend: parseFloat(org.total_spend) || 0,
-        supplierCount: parseInt(org.supplier_count) || 0,
-      });
+      
+      // Only add to organisations list if it's an ICB or a trust without a parent ICB
+      if (org.isIcb || !trustsWithParentIcb.has(org.id)) {
+        regionData[region].organisations.push(org);
+      }
     }
 
     // Format regions for response
     const regions = Object.entries(regionData)
-      .map(([name, data]) => ({
-        name,
-        totalSpend: data.totalSpend,
-        buyers: data.buyers,
-        topBuyers: data.organisations
-          .sort((a, b) => b.spend - a.spend)
-          .slice(0, 5),
-        spendLevel: data.totalSpend > 20_000_000_000 ? "high" : data.totalSpend > 5_000_000_000 ? "medium" : "low",
-      }))
+      .map(([name, data]) => {
+        // Get all trusts for map markers (flatten trusts from ICBs + standalone trusts)
+        const allTrusts: OrgData[] = [];
+        for (const org of data.organisations) {
+          if (org.isIcb) {
+            // Add all trusts under this ICB
+            allTrusts.push(...org.trusts);
+          } else {
+            // Add standalone trust
+            allTrusts.push(org);
+          }
+        }
+        
+        return {
+          name,
+          totalSpend: data.totalSpend,
+          buyers: data.buyers,
+          topBuyers: data.organisations
+            .sort((a, b) => b.spend - a.spend)
+            .slice(0, 20),
+          // Trusts only (for map markers)
+          trustLocations: allTrusts
+            .filter(t => t.latitude && t.longitude)
+            .sort((a, b) => b.spend - a.spend)
+            .slice(0, 50),
+          spendLevel: data.totalSpend > 20_000_000_000 ? "high" : data.totalSpend > 5_000_000_000 ? "medium" : "low",
+        };
+      })
       .sort((a, b) => b.totalSpend - a.totalSpend);
 
     // Get selected region details if specified

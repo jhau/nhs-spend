@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import RegionalActivity from "./RegionalActivity";
 
 interface Buyer {
@@ -60,6 +61,9 @@ function getDefaultDateRange() {
 }
 
 export default function BuyersPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [parentOrgs, setParentOrgs] = useState<ParentOrg[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -69,7 +73,35 @@ export default function BuyersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [activeTab, setActiveTab] = useState<"listings" | "regional">("listings");
+  
+  // Get tab from URL, default to "listings"
+  const tabParam = searchParams.get("tab");
+  const activeTab = tabParam === "regional" ? "regional" : "listings";
+  
+  // Get region from URL for deep linking
+  const regionParam = searchParams.get("region");
+  
+  const setActiveTab = (tab: "listings" | "regional") => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === "listings") {
+      params.delete("tab");
+      params.delete("region");
+    } else {
+      params.set("tab", tab);
+    }
+    router.push(`/buyers${params.toString() ? `?${params.toString()}` : ""}`);
+  };
+  
+  const setRegionParam = (region: string | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "regional");
+    if (region) {
+      params.set("region", region.toLowerCase().replace(/ /g, "-"));
+    } else {
+      params.delete("region");
+    }
+    router.push(`/buyers?${params.toString()}`);
+  };
   
   // Date range state with previous year as default
   const defaultDates = getDefaultDateRange();
@@ -221,7 +253,12 @@ export default function BuyersPage() {
 
       {/* Tab Content */}
       {activeTab === "regional" ? (
-        <RegionalActivity startDate={startDate} endDate={endDate} />
+        <RegionalActivity 
+          startDate={startDate} 
+          endDate={endDate} 
+          initialRegion={regionParam}
+          onRegionChange={setRegionParam}
+        />
       ) : (
         <>
       {/* Parent Organisations - National/Regional Bodies */}

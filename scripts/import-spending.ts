@@ -12,6 +12,7 @@ import { organisations, spendEntries } from "@/db/schema";
 
 type CliOptions = {
   filePath: string;
+  assetId: number;
   truncate: boolean;
   dryRun: boolean;
 };
@@ -68,34 +69,23 @@ async function main() {
   }
 
   const stats = fs.statSync(resolvedPath);
-  const filesToProcess: string[] = [];
-
   if (stats.isDirectory()) {
-    const files = fs.readdirSync(resolvedPath);
-    const excelFiles = files
-      .filter((file) => /\.(xlsx|xls)$/i.test(file))
-      .map((file) => path.join(resolvedPath, file))
-      .sort();
-
-    if (excelFiles.length === 0) {
-      console.error(`✖ No Excel files found in directory: ${resolvedPath}`);
-      process.exit(1);
-    }
-
-    console.info(`📁 Found ${excelFiles.length} Excel file(s) in directory`);
-    filesToProcess.push(...excelFiles);
-  } else if (stats.isFile()) {
-    if (!/\.(xlsx|xls)$/i.test(resolvedPath)) {
-      console.error(
-        `✖ File must be an Excel file (.xlsx or .xls): ${resolvedPath}`
-      );
-      process.exit(1);
-    }
-    filesToProcess.push(resolvedPath);
-  } else {
-    console.error(`✖ Path must be a file or directory: ${resolvedPath}`);
+    console.error(
+      `✖ Directory import is no longer supported by this script. Use the Web UI pipeline instead.`
+    );
     process.exit(1);
   }
+  if (!stats.isFile()) {
+    console.error(`✖ Path must be a file: ${resolvedPath}`);
+    process.exit(1);
+  }
+  if (!/\.(xlsx|xls)$/i.test(resolvedPath)) {
+    console.error(
+      `✖ File must be an Excel file (.xlsx or .xls): ${resolvedPath}`
+    );
+    process.exit(1);
+  }
+  const filesToProcess: string[] = [resolvedPath];
 
   if (options.dryRun) {
     console.info("\n🔍 DRY RUN MODE - No data will be modified\n");
@@ -150,10 +140,8 @@ async function main() {
             "  • Truncated all existing spend entries and organisations"
           );
         } else {
-          // Delete only entries from this specific source file to avoid duplicates
-          const deleted = await tx
-            .delete(spendEntries)
-            .where(eq(spendEntries.sourceFile, filePath));
+          // Delete only entries from this asset to avoid duplicates
+          await tx.delete(spendEntries).where(eq(spendEntries.assetId, options.assetId));
         }
 
         const syncResult = await syncTrusts(tx, metadataMap, discoveredTrusts);
@@ -164,7 +152,7 @@ async function main() {
           dataSheetNames,
           metadataMap,
           syncResult.idByKey,
-          filePath
+          options.assetId
         );
 
         return { syncResult, importSummary };
@@ -229,6 +217,7 @@ async function main() {
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
   let filePath: string | undefined;
+  let assetId: number | undefined;
   let truncate = false;
   let dryRun = false;
 
@@ -242,6 +231,11 @@ function parseArgs(): CliOptions {
       dryRun = true;
       continue;
     }
+    if (arg === "--asset-id") {
+      const value = args[++i];
+      assetId = value ? Number(value) : undefined;
+      continue;
+    }
     if (arg === "--file" || arg === "--dir" || arg === "--directory") {
       filePath = args[++i];
       continue;
@@ -253,14 +247,11 @@ function parseArgs(): CliOptions {
 
   if (!filePath) {
     console.error(
-      "Usage: pnpm data:import -- <file-or-directory> [--truncate] [--dry-run]"
+      "Usage: pnpm data:import -- <file.xlsx> --asset-id <id> [--truncate] [--dry-run]"
     );
     console.error("");
     console.error("Examples:");
-    console.error("  pnpm data:import -- data/file.xlsx");
-    console.error(
-      "  pnpm data:import -- data/                # Process all Excel files in directory"
-    );
+    console.error("  pnpm data:import -- data/file.xlsx --asset-id 123");
     console.error(
       "  pnpm data:import -- data/ --truncate     # Clear all existing data first"
     );
@@ -270,7 +261,12 @@ function parseArgs(): CliOptions {
     process.exit(1);
   }
 
-  return { filePath, truncate, dryRun };
+  if (!assetId || !Number.isInteger(assetId) || assetId <= 0) {
+    console.error("✖ --asset-id is required and must be a positive integer");
+    process.exit(1);
+  }
+
+  return { filePath, assetId, truncate, dryRun };
 }
 
 /**
@@ -513,7 +509,7 @@ async function importSpendSheets(
   sheetNames: string[],
   metadataMap: Map<string, TrustMetadata>,
   trustIdByKey: Map<string, number>,
-  sourceFile: string
+  assetId: number
 ): Promise<ImportSummary> {
   const warnings: string[] = [];
   let paymentsInserted = 0;
@@ -603,13 +599,13 @@ async function importSpendSheets(
       }
 
       batch.push({
+        assetId,
         organisationId: trustId,
         supplier,
         amount: amountResult.amount.toFixed(2),
         paymentDate: dateResult.iso,
         rawAmount: amountResult.raw,
         paymentDateRaw: dateResult.raw,
-        sourceFile,
         sourceSheet: sheetName,
         sourceRowNumber: rowIndex + 1,
       });

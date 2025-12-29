@@ -1,4 +1,8 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+
+// Load .env first, then .env.local overrides (if exists)
+dotenv.config({ path: ".env" });
+dotenv.config({ path: ".env.local", override: true });
 
 import { defineConfig } from "drizzle-kit";
 

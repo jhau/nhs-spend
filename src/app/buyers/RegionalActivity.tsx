@@ -1,14 +1,29 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps";
+import React, { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker } from "react-simple-maps";
+
+interface Organisation {
+  id: number;
+  name: string;
+  spend: number;
+  supplierCount: number;
+  latitude: number | null;
+  longitude: number | null;
+  odsCode: string | null;
+  icbOdsCode: string | null;
+  isIcb: boolean;
+  trusts: Organisation[];
+}
 
 interface Region {
   name: string;
   totalSpend: number;
   buyers: number;
   spendLevel: "low" | "medium" | "high";
-  topBuyers: Array<{ id: number; name: string; spend: number; supplierCount: number }>;
+  topBuyers: Organisation[];
+  trustLocations: Organisation[];
 }
 
 interface TooltipData {
@@ -19,10 +34,36 @@ interface TooltipData {
   y: number;
 }
 
+interface TrustTooltipData {
+  name: string;
+  spend: number;
+  supplierCount: number;
+  x: number;
+  y: number;
+}
+
 interface Props {
   startDate: string;
   endDate: string;
+  initialRegion?: string | null;
+  onRegionChange?: (region: string | null) => void;
 }
+
+// Convert URL slug to display name
+const REGION_SLUG_MAP: Record<string, string> = {
+  "london": "London",
+  "south-east": "South East",
+  "south-west": "South West",
+  "east-of-england": "East of England",
+  "midlands": "Midlands",
+  "north-west": "North West",
+  "north-east": "North East",
+  "yorkshire": "Yorkshire",
+  "wales": "Wales",
+  "scotland": "Scotland",
+  "northern-ireland": "Northern Ireland",
+  "other": "Other",
+};
 
 function formatCurrency(amount: number): string {
   if (amount >= 1_000_000_000) {
@@ -80,12 +121,37 @@ function geoMatchesRegion(geoName: string, selectedRegion: string): boolean {
   return dataRegion === selectedRegion;
 }
 
-export default function RegionalActivity({ startDate, endDate }: Props) {
+export default function RegionalActivity({ startDate, endDate, initialRegion, onRegionChange }: Props) {
+  const router = useRouter();
   const [regions, setRegions] = useState<Region[]>([]);
-  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  // Parse initial region from URL slug
+  const parsedInitialRegion = initialRegion ? REGION_SLUG_MAP[initialRegion.toLowerCase()] || null : null;
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(parsedInitialRegion);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+  const [trustTooltip, setTrustTooltip] = useState<TrustTooltipData | null>(null);
+  const [expandedIcbs, setExpandedIcbs] = useState<Set<number>>(new Set());
+
+  const toggleIcbExpanded = (icbId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedIcbs((prev) => {
+      const next = new Set(prev);
+      if (next.has(icbId)) {
+        next.delete(icbId);
+      } else {
+        next.add(icbId);
+      }
+      return next;
+    });
+  };
+
+  const navigateToOrg = (orgId: number) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    router.push(`/buyers/${orgId}${params.toString() ? `?${params.toString()}` : ""}`);
+  };
 
   const fetchRegions = useCallback(async () => {
     setLoading(true);
@@ -110,14 +176,22 @@ export default function RegionalActivity({ startDate, endDate }: Props) {
     fetchRegions();
   }, [fetchRegions]);
 
+  // Sync selectedRegion with URL changes
+  useEffect(() => {
+    const newRegion = initialRegion ? REGION_SLUG_MAP[initialRegion.toLowerCase()] || null : null;
+    setSelectedRegion(newRegion);
+  }, [initialRegion]);
+
   const handleRegionClick = (region: string) => {
     if (region !== "Other") {
       setSelectedRegion(region);
+      onRegionChange?.(region);
     }
   };
 
   const handleBackClick = () => {
     setSelectedRegion(null);
+    onRegionChange?.(null);
   };
 
   const getRegionColor = (regionName: string, isDetailView: boolean = false) => {
@@ -186,15 +260,23 @@ export default function RegionalActivity({ startDate, endDate }: Props) {
           <div />
         )}
         <div style={styles.legend}>
-          <span style={styles.legendItem}>
-            <span style={{ ...styles.legendDot, backgroundColor: "#d1d5db" }} /> Low spend
-          </span>
-          <span style={styles.legendItem}>
-            <span style={{ ...styles.legendDot, backgroundColor: "#eab308" }} /> Medium spend
-          </span>
-          <span style={styles.legendItem}>
-            <span style={{ ...styles.legendDot, backgroundColor: "#22c55e" }} /> High spend
-          </span>
+          {selectedRegion ? (
+            <span style={styles.legendItem}>
+              <span style={{ ...styles.legendDot, backgroundColor: "#dc2626", borderRadius: "50%" }} /> NHS Trust
+            </span>
+          ) : (
+            <>
+              <span style={styles.legendItem}>
+                <span style={{ ...styles.legendDot, backgroundColor: "#d1d5db" }} /> Low spend
+              </span>
+              <span style={styles.legendItem}>
+                <span style={{ ...styles.legendDot, backgroundColor: "#eab308" }} /> Medium spend
+              </span>
+              <span style={styles.legendItem}>
+                <span style={{ ...styles.legendDot, backgroundColor: "#22c55e" }} /> High spend
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -292,6 +374,37 @@ export default function RegionalActivity({ startDate, endDate }: Props) {
                   })
                 }
               </Geographies>
+              {/* Trust markers when zoomed into a region */}
+              {selectedRegion && selectedRegionData && selectedRegionData.trustLocations
+                .map((org) => (
+                  <Marker
+                    key={org.id}
+                    coordinates={[org.longitude!, org.latitude!]}
+                    onMouseEnter={(e: React.MouseEvent) => {
+                      setTrustTooltip({
+                        name: org.name,
+                        spend: org.spend,
+                        supplierCount: org.supplierCount,
+                        x: e.clientX,
+                        y: e.clientY,
+                      });
+                    }}
+                    onMouseMove={(e: React.MouseEvent) => {
+                      setTrustTooltip((prev) =>
+                        prev ? { ...prev, x: e.clientX, y: e.clientY } : null
+                      );
+                    }}
+                    onMouseLeave={() => setTrustTooltip(null)}
+                  >
+                    <circle
+                      r={4}
+                      fill="#dc2626"
+                      stroke="#fff"
+                      strokeWidth={1.5}
+                      style={{ cursor: "pointer" }}
+                    />
+                  </Marker>
+                ))}
             </ZoomableGroup>
           </ComposableMap>
         )}
@@ -318,12 +431,35 @@ export default function RegionalActivity({ startDate, endDate }: Props) {
         </div>
       )}
 
+      {/* Trust Tooltip */}
+      {trustTooltip && (
+        <div
+          style={{
+            ...styles.tooltip,
+            left: Math.min(trustTooltip.x + 15, typeof window !== 'undefined' ? window.innerWidth - 250 : trustTooltip.x + 15),
+            top: Math.max(trustTooltip.y - 80, 10),
+          }}
+        >
+          <div style={styles.tooltipTitle}>{trustTooltip.name}</div>
+          <div style={styles.tooltipRow}>
+            <span style={styles.tooltipLabel}>Total Spend:</span>
+            <span style={styles.tooltipValue}>{formatCurrency(trustTooltip.spend)}</span>
+          </div>
+          <div style={styles.tooltipRow}>
+            <span style={styles.tooltipLabel}>Suppliers:</span>
+            <span style={styles.tooltipValue}>{trustTooltip.supplierCount}</span>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div style={styles.tableContainer}>
         <table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>{selectedRegion ? "Organisation" : "Region"}</th>
+              {selectedRegion && <th style={styles.th}>ODS Code</th>}
+              {selectedRegion && <th style={styles.th}>ICB Code</th>}
               <th style={{ ...styles.th, textAlign: "right" }}>Total Spend</th>
               <th style={{ ...styles.th, textAlign: "center" }}>{selectedRegion ? "Suppliers" : "Buyers"}</th>
               <th style={styles.th}>{selectedRegion ? "Type" : "Top Organisation"}</th>
@@ -332,31 +468,102 @@ export default function RegionalActivity({ startDate, endDate }: Props) {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={4} style={styles.loadingCell}>Loading...</td>
+                <td colSpan={selectedRegion ? 6 : 4} style={styles.loadingCell}>Loading...</td>
               </tr>
             ) : selectedRegion && selectedRegionData ? (
               // Show organisations in the selected region
               selectedRegionData.topBuyers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={styles.emptyCell}>No organisations found in this region</td>
+                  <td colSpan={6} style={styles.emptyCell}>No organisations found in this region</td>
                 </tr>
               ) : (
-                selectedRegionData.topBuyers.map((org, index) => (
-                  <tr key={org.id || index} style={styles.tr}>
-                    <td style={styles.td}>
-                      <span style={styles.orgName}>{org.name}</span>
-                    </td>
-                    <td style={{ ...styles.td, textAlign: "right", fontWeight: 600 }}>
-                      {formatCurrency(org.spend)}
-                    </td>
-                    <td style={{ ...styles.td, textAlign: "center" }}>
-                      {org.supplierCount}
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.orgType}>NHS Trust</span>
-                    </td>
-                  </tr>
-                ))
+                selectedRegionData.topBuyers.map((org, index) => {
+                  const isExpanded = expandedIcbs.has(org.id);
+                  const hasTrusts = org.isIcb && org.trusts && org.trusts.length > 0;
+                  
+                  return (
+                    <React.Fragment key={org.id || index}>
+                      <tr
+                        style={{
+                          ...styles.tr,
+                          cursor: "pointer",
+                          backgroundColor: isExpanded ? "#f8fafc" : undefined,
+                        }}
+                        onClick={() => navigateToOrg(org.id)}
+                      >
+                        <td style={styles.td}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {hasTrusts && (
+                              <span 
+                                style={styles.expandIcon}
+                                onClick={(e) => toggleIcbExpanded(org.id, e)}
+                              >
+                                {isExpanded ? "▼" : "▶"}
+                              </span>
+                            )}
+                            <span style={styles.orgName}>{org.name}</span>
+                            {hasTrusts && (
+                              <span 
+                                style={styles.trustCount}
+                                onClick={(e) => toggleIcbExpanded(org.id, e)}
+                              >
+                                {org.trusts.length} trust{org.trusts.length !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={styles.odsCode}>{org.odsCode || "—"}</span>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={styles.odsCode}>{org.isIcb ? "—" : (org.icbOdsCode || "—")}</span>
+                        </td>
+                        <td style={{ ...styles.td, textAlign: "right", fontWeight: 600 }}>
+                          {formatCurrency(org.spend)}
+                        </td>
+                        <td style={{ ...styles.td, textAlign: "center" }}>
+                          {org.supplierCount}
+                        </td>
+                        <td style={styles.td}>
+                          <span style={{
+                            ...styles.orgType,
+                            backgroundColor: org.isIcb ? "#dbeafe" : "#f3f4f6",
+                            color: org.isIcb ? "#1d4ed8" : "#666",
+                          }}>
+                            {org.isIcb ? "ICB" : "NHS Trust"}
+                          </span>
+                        </td>
+                      </tr>
+                      {/* Expanded trust rows */}
+                      {isExpanded && org.trusts.map((trust) => (
+                        <tr 
+                          key={trust.id} 
+                          style={{ ...styles.childRow, cursor: "pointer" }}
+                          onClick={() => navigateToOrg(trust.id)}
+                        >
+                          <td style={{ ...styles.td, paddingLeft: "48px" }}>
+                            <span style={styles.childOrgName}>{trust.name}</span>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.odsCode}>{trust.odsCode || "—"}</span>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.odsCode}>{trust.icbOdsCode || "—"}</span>
+                          </td>
+                          <td style={{ ...styles.td, textAlign: "right", fontWeight: 500, color: "#666" }}>
+                            {formatCurrency(trust.spend)}
+                          </td>
+                          <td style={{ ...styles.td, textAlign: "center", color: "#666" }}>
+                            {trust.supplierCount}
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.orgType}>NHS Trust</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })
               )
             ) : regions.length === 0 ? (
               <tr>
@@ -526,6 +733,36 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: "4px",
     fontSize: "12px",
     color: "#666",
+  },
+  expandIcon: {
+    fontSize: "10px",
+    color: "#888",
+    width: "12px",
+    flexShrink: 0,
+  },
+  trustCount: {
+    fontSize: "11px",
+    color: "#888",
+    backgroundColor: "#f3f4f6",
+    padding: "2px 6px",
+    borderRadius: "10px",
+  },
+  childRow: {
+    backgroundColor: "#f8fafc",
+    borderBottom: "1px solid #f0f0f0",
+  },
+  childOrgName: {
+    fontWeight: 400,
+    color: "#555",
+    fontSize: "13px",
+  },
+  odsCode: {
+    fontFamily: "monospace",
+    fontSize: "12px",
+    color: "#666",
+    backgroundColor: "#f3f4f6",
+    padding: "2px 6px",
+    borderRadius: "3px",
   },
   loading: {
     textAlign: "center" as const,
