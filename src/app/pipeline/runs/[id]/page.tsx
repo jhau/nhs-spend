@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { CompaniesHouseSearch } from "@/components/CompaniesHouseSearch";
 
 type RunDetailResponse = {
   run?: {
@@ -334,12 +335,14 @@ function SuppliersTable({
   offset,
   limit,
   onPageChange,
+  onLinked,
 }: {
   suppliers?: RunDetailResponse["suppliers"];
   totalCount?: number;
   offset: number;
   limit: number;
   onPageChange: (newOffset: number) => void;
+  onLinked?: () => void;
 }) {
   if (!suppliers || suppliers.length === 0) return null;
 
@@ -426,7 +429,14 @@ function SuppliersTable({
                       </span>
                     </div>
                   ) : (
-                    <span className="text-muted-foreground text-sm">—</span>
+                    <CompaniesHouseSearch
+                      supplierName={s.name}
+                      supplierId={s.id}
+                      onLinked={onLinked}
+                      buttonText="Link"
+                      buttonVariant="outline"
+                      buttonSize="sm"
+                    />
                   )}
                 </TableCell>
                 <TableCell className="w-[80px]">
@@ -760,6 +770,7 @@ export default function PipelineRunPage({
         offset={suppliersOffset}
         limit={suppliersLimit}
         onPageChange={setSuppliersOffset}
+        onLinked={() => void fetchRun()}
       />
 
       {/* Stages */}

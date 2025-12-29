@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { CompaniesHouseSearch } from "@/components/CompaniesHouseSearch";
 
 interface Summary {
   totalSpend: number;
@@ -143,12 +144,6 @@ export default function SupplierPage() {
   const [expandedContracts, setExpandedContracts] = useState<Set<string>>(new Set());
   const [selectedContractDetails, setSelectedContractDetails] = useState<Contract | null>(null);
 
-  // Search Companies House state
-  const [isSearchingCompanies, setIsSearchingCompanies] = useState(false);
-  const [companySearchResults, setCompanySearchResults] = useState<CompanySearchResult[]>([]);
-  const [showSearchModal, setShowSearchModal] = useState(false);
-  const [linkingCompany, setLinkingCompany] = useState<string | null>(null);
-
   // Date range
   const defaultDates = getDefaultDateRange();
   const [startDate, setStartDate] = useState(defaultDates.startDate);
@@ -215,52 +210,6 @@ export default function SupplierPage() {
       setContractsLoading(false);
     }
   }, [name]);
-
-  const searchCompaniesHouse = async () => {
-    setIsSearchingCompanies(true);
-    setShowSearchModal(true);
-    try {
-      const res = await fetch("/api/matching/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: supplierName, supplierName }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCompanySearchResults(data.items || []);
-      }
-    } catch (err) {
-      console.error("Search failed:", err);
-    } finally {
-      setIsSearchingCompanies(false);
-    }
-  };
-
-  const linkCompany = async (company: CompanySearchResult) => {
-    if (!supplierId) return;
-    setLinkingCompany(company.company_number);
-    try {
-      const res = await fetch("/api/matching/link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          supplierId,
-          companyNumber: company.company_number,
-          matchConfidence: company.similarity,
-        }),
-      });
-      if (res.ok) {
-        setShowSearchModal(false);
-        // Refresh data to show linked company
-        fetchData();
-        fetchContracts();
-      }
-    } catch (err) {
-      console.error("Linking failed:", err);
-    } finally {
-      setLinkingCompany(null);
-    }
-  };
 
   // Fetch contracts when component mounts
   useEffect(() => {
@@ -350,22 +299,34 @@ export default function SupplierPage() {
             {linkedCompany.address && (
               <span style={styles.badge}>{linkedCompany.address}</span>
             )}
-            <button
-              onClick={searchCompaniesHouse}
-              style={styles.relinkButton}
-            >
-              Change Link
-            </button>
+            {supplierId && (
+              <CompaniesHouseSearch
+                supplierName={supplierName}
+                supplierId={supplierId}
+                onLinked={() => {
+                  fetchData();
+                  fetchContracts();
+                }}
+                buttonText="Change Link"
+                buttonVariant="ghost"
+              />
+            )}
           </div>
         ) : (
           <div style={styles.meta}>
             <span style={styles.noLinkText}>No Companies House link</span>
-            <button
-              onClick={searchCompaniesHouse}
-              style={styles.searchButton}
-            >
-              Search Companies House
-            </button>
+            {supplierId && (
+              <CompaniesHouseSearch
+                supplierName={supplierName}
+                supplierId={supplierId}
+                onLinked={() => {
+                  fetchData();
+                  fetchContracts();
+                }}
+                buttonText="Search Companies House"
+                buttonVariant="default"
+              />
+            )}
           </div>
         )}
       </div>
@@ -848,70 +809,6 @@ export default function SupplierPage() {
                       region: selectedContractDetails.region,
                     }, null, 2)}
                   </pre>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Companies House Search Modal */}
-      {showSearchModal && (
-        <div style={styles.modalOverlay} onClick={() => setShowSearchModal(false)}>
-          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Search Companies House</h2>
-              <button
-                onClick={() => setShowSearchModal(false)}
-                style={styles.modalCloseButton}
-              >
-                ×
-              </button>
-            </div>
-            <div style={styles.modalBody}>
-              <div style={styles.searchPrompt}>
-                Searching for: <strong>{supplierName}</strong>
-              </div>
-              {isSearchingCompanies ? (
-                <div style={styles.loading}>Searching Companies House...</div>
-              ) : companySearchResults.length === 0 ? (
-                <div style={styles.emptyState}>No companies found</div>
-              ) : (
-                <div style={styles.searchResultsList}>
-                  {companySearchResults.map((company) => (
-                    <div key={company.company_number} style={styles.searchResultItem}>
-                      <div style={styles.searchResultInfo}>
-                        <div style={styles.searchResultHeader}>
-                          <span style={styles.searchResultTitle}>{company.title}</span>
-                          {company.similarity !== undefined && (
-                            <span style={{
-                              ...styles.confidenceBadge,
-                              backgroundColor: company.similarity > 0.8 ? "#dcfce7" : company.similarity > 0.5 ? "#fef3c7" : "#f1f1f1",
-                              color: company.similarity > 0.8 ? "#166534" : company.similarity > 0.5 ? "#92400e" : "#666",
-                            }}>
-                              {Math.round(company.similarity * 100)}% match
-                            </span>
-                          )}
-                        </div>
-                        <div style={styles.searchResultMeta}>
-                          {company.company_number} • {company.company_status} • {company.company_type}
-                        </div>
-                        {company.address_snippet && (
-                          <div style={styles.searchResultAddress}>{company.address_snippet}</div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => linkCompany(company)}
-                        disabled={linkingCompany === company.company_number}
-                        style={{
-                          ...styles.linkButton,
-                          opacity: linkingCompany === company.company_number ? 0.7 : 1,
-                        }}
-                      >
-                        {linkingCompany === company.company_number ? "Linking..." : "Link Supplier"}
-                      </button>
-                    </div>
-                  ))}
                 </div>
               )}
             </div>
