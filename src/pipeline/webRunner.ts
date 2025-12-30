@@ -8,9 +8,7 @@ import {
   setRunStageStatus,
 } from "./pipelineDb";
 import { createPipelineLogger } from "./logger";
-import { importSpendExcelStage, matchSuppliersStage } from "./stages";
-
-const stages = [importSpendExcelStage, matchSuppliersStage];
+import { importSpendExcelStage, importCouncilSpendExcelStage, matchSuppliersStage } from "./stages";
 
 const queue: number[] = [];
 let isProcessing = false;
@@ -56,10 +54,16 @@ async function runOne(runId: number) {
     finishedAt: null,
   });
 
+  const importStage = run.orgType === "council" 
+    ? importCouncilSpendExcelStage 
+    : importSpendExcelStage;
+  
+  const stages = [importStage, matchSuppliersStage];
+
   await logger.log({
     level: "debug",
     message: `Initializing ${stages.length} pipeline stage(s)`,
-    meta: { stageIds: stages.map((s) => s.id) },
+    meta: { stageIds: stages.map((s) => s.id), orgType: run.orgType },
   });
 
   for (const stage of stages) {
@@ -118,7 +122,8 @@ async function runOne(runId: number) {
         assetId: run.assetId as number,
         limit: 100, // Default limit for matching if applicable
         autoMatchThreshold: 0.9,
-        minSimilarityThreshold: 0.5
+        minSimilarityThreshold: 0.5,
+        ...(run.params || {})
       },
       {
         fromStageId: run.fromStageId ?? undefined,

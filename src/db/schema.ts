@@ -13,88 +13,168 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-export const organisations = pgTable(
-  "organisations",
+// =============================================================================
+// Central Entity Registry
+// =============================================================================
+
+/**
+ * Central registry for all legal entities (companies, NHS orgs, councils, etc.)
+ * Both buyers and suppliers can reference entities.
+ */
+export const entities = pgTable(
+  "entities",
   {
     id: serial("id").primaryKey(),
+    entityType: text("entity_type").notNull(), // 'company' | 'nhs_trust' | 'nhs_icb' | 'nhs_practice' | 'council' | 'charity' | 'other'
+    registryId: text("registry_id").notNull(), // company_number / ods_code / gss_code / charity_number
     name: text("name").notNull(),
-    trustType: text("trust_type"),
-    odsCode: text("ods_code"),
-    postCode: text("post_code"),
-    icbOdsCode: text("icb_ods_code"),
-    latitude: doublePrecision("latitude"),
-    longitude: doublePrecision("longitude"),
-    officialWebsite: text("official_website"),
-    spendingDataUrl: text("spending_data_url"),
-    missingDataNote: text("missing_data_note"),
-    verifiedVia: text("verified_via"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (org) => ({
-    odsCodeIdx: uniqueIndex("organisations_ods_code_unique").on(org.odsCode),
-    nameIdx: uniqueIndex("organisations_name_unique").on(org.name),
-  })
-);
+    status: text("status"), // 'active' | 'dissolved' | 'inactive' etc.
 
-// Companies House data cache
-export const companies = pgTable(
-  "companies",
-  {
-    id: serial("id").primaryKey(),
-    companyNumber: text("company_number").notNull(),
-    companyName: text("company_name").notNull(),
-    companyStatus: text("company_status"),
-    companyType: text("company_type"),
-    dateOfCreation: date("date_of_creation"),
-    jurisdiction: text("jurisdiction"),
-
-    // Address (flattened for querying)
+    // Common address fields
     addressLine1: text("address_line_1"),
     addressLine2: text("address_line_2"),
     locality: text("locality"),
     postalCode: text("postal_code"),
     country: text("country"),
 
-    // Arrays stored as JSONB
+    // Geo
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (entity) => ({
+    typeRegistryIdx: uniqueIndex("entities_type_registry_unique").on(
+      entity.entityType,
+      entity.registryId
+    ),
+    nameIdx: index("entities_name_idx").on(entity.name),
+    typeIdx: index("entities_type_idx").on(entity.entityType),
+    postalCodeIdx: index("entities_postal_code_idx").on(entity.postalCode),
+  })
+);
+
+// =============================================================================
+// Entity Detail Tables
+// =============================================================================
+
+/**
+ * Companies House data - extends entities for company-specific fields
+ */
+export const companies = pgTable(
+  "companies",
+  {
+    entityId: integer("entity_id")
+      .primaryKey()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    companyNumber: text("company_number").notNull(),
+    companyStatus: text("company_status"), // 'active' | 'dissolved' | 'liquidation' etc.
+    companyType: text("company_type"), // 'ltd' | 'plc' | 'llp' etc.
+    dateOfCreation: date("date_of_creation"),
+    dateOfCessation: date("date_of_cessation"),
+    jurisdiction: text("jurisdiction"),
     sicCodes: jsonb("sic_codes").$type<string[]>(),
     previousNames:
       jsonb("previous_names").$type<
         { name: string; effective_from: string; ceased_on: string }[]
       >(),
 
-    // Full response for reference
-    rawData: jsonb("raw_data"),
-
     // Cache metadata
+    rawData: jsonb("raw_data"),
     etag: text("etag"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
-
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
   },
   (company) => ({
     companyNumberIdx: uniqueIndex("companies_company_number_unique").on(
       company.companyNumber
     ),
-    companyNameIdx: index("companies_company_name_idx").on(company.companyName),
-    postalCodeIdx: index("companies_postal_code_idx").on(company.postalCode),
-    statusIdx: index("companies_status_idx").on(company.companyStatus),
+    companyStatusIdx: index("companies_status_idx").on(company.companyStatus),
   })
 );
 
+/**
+ * NHS organisations (trusts, ICBs, CCGs, GP practices, etc.)
+ */
+export const nhsOrganisations = pgTable(
+  "nhs_organisations",
+  {
+    entityId: integer("entity_id")
+      .primaryKey()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    odsCode: text("ods_code").notNull(),
+    orgType: text("org_type").notNull(), // 'trust' | 'icb' | 'ccg' | 'gp_practice' | 'pharmacy' | 'other'
+    orgSubType: text("org_sub_type"), // 'acute' | 'mental_health' | 'community' | 'ambulance' etc. for trusts
+    parentOdsCode: text("parent_ods_code"), // ICB for trusts, PCN for practices, etc.
+    region: text("region"),
+    nhsRegion: text("nhs_region"),
+    openDate: date("open_date"),
+    closeDate: date("close_date"),
+    isActive: boolean("is_active").default(true),
+
+    // Cache metadata
+    rawData: jsonb("raw_data"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+  },
+  (org) => ({
+    odsCodeIdx: uniqueIndex("nhs_organisations_ods_code_unique").on(
+      org.odsCode
+    ),
+    orgTypeIdx: index("nhs_organisations_type_idx").on(org.orgType),
+    parentOdsIdx: index("nhs_organisations_parent_idx").on(org.parentOdsCode),
+  })
+);
+
+/**
+ * Councils / Local authorities
+ */
+export const councils = pgTable(
+  "councils",
+  {
+    entityId: integer("entity_id")
+      .primaryKey()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    gssCode: text("gss_code"), // Government Statistical Service code (E09000001 etc.)
+    onsCode: text("ons_code"), // ONS code if different
+    councilType: text("council_type").notNull(), // 'county' | 'district' | 'unitary' | 'metropolitan' | 'london_borough' | 'combined_authority'
+    tier: text("tier"), // 'tier1' (county), 'tier2' (district), 'unitary' etc.
+    homepageUrl: text("homepage_url"),
+    region: text("region"),
+    nation: text("nation"), // 'england' | 'wales' | 'scotland' | 'northern_ireland'
+    population: integer("population"),
+
+    // Cache metadata
+    rawData: jsonb("raw_data"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+  },
+  (council) => ({
+    gssCodeIdx: uniqueIndex("councils_gss_code_unique").on(council.gssCode),
+    councilTypeIdx: index("councils_type_idx").on(council.councilType),
+  })
+);
+
+// =============================================================================
+// Suppliers
+// =============================================================================
+
+/**
+ * Suppliers - now links to entities instead of directly to companies
+ */
 export const suppliers = pgTable(
   "suppliers",
   {
     id: serial("id").primaryKey(),
     name: text("name").notNull(),
-    companyId: integer("company_id").references(() => companies.id, {
+    entityId: integer("entity_id").references(() => entities.id, {
       onDelete: "set null",
     }),
-    matchStatus: text("match_status").notNull().default("pending"), // 'matched' | 'no_match' | 'skipped' | 'pending'
+    matchStatus: text("match_status").notNull().default("pending"), // 'matched' | 'no_match' | 'skipped' | 'pending' | 'pending_review'
     matchConfidence: numeric("match_confidence", { precision: 5, scale: 2 }),
+    matchAttemptedAt: timestamp("match_attempted_at", { withTimezone: true }),
     manuallyVerified: boolean("manually_verified").default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -105,10 +185,44 @@ export const suppliers = pgTable(
   },
   (supplier) => ({
     nameIdx: uniqueIndex("suppliers_name_unique").on(supplier.name),
-    companyIdIdx: index("suppliers_company_idx").on(supplier.companyId),
+    entityIdIdx: index("suppliers_entity_idx").on(supplier.entityId),
     statusIdx: index("suppliers_status_idx").on(supplier.matchStatus),
   })
 );
+
+// =============================================================================
+// Organisations (Buyers)
+// =============================================================================
+
+/**
+ * Organisations table - now links to entities and only stores buyer-specific metadata
+ */
+export const organisations = pgTable(
+  "organisations",
+  {
+    id: serial("id").primaryKey(),
+    entityId: integer("entity_id").references(() => entities.id, {
+      onDelete: "set null",
+    }),
+
+    // Buyer-specific metadata (not entity attributes)
+    officialWebsite: text("official_website"),
+    spendingDataUrl: text("spending_data_url"),
+    missingDataNote: text("missing_data_note"),
+    verifiedVia: text("verified_via"),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (org) => ({
+    entityIdIdx: uniqueIndex("organisations_entity_unique").on(org.entityId),
+  })
+);
+
+// =============================================================================
+// Pipeline Tables
+// =============================================================================
 
 /**
  * Pipeline metadata: raw files live in object storage; Postgres stores metadata only.
@@ -181,9 +295,11 @@ export const pipelineRuns = pgTable(
     trigger: text("trigger").notNull().default("web"),
     createdBy: text("created_by"),
     status: text("status").notNull().default("queued"), // queued | running | succeeded | failed | cancelled
+    orgType: text("org_type").notNull().default("nhs"), // 'nhs' | 'council'
     dryRun: boolean("dry_run").notNull().default(false),
     fromStageId: text("from_stage_id"),
     toStageId: text("to_stage_id"),
+    params: jsonb("params").$type<Record<string, any> | null>(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -285,7 +401,10 @@ export const auditLog = pgTable(
   })
 );
 
-// Contract Finder API cache
+// =============================================================================
+// Contracts (Contract Finder API cache)
+// =============================================================================
+
 export const contracts = pgTable(
   "contracts",
   {
@@ -341,12 +460,22 @@ export const contractSupplierSearches = pgTable(
   })
 );
 
+// =============================================================================
+// Type Exports
+// =============================================================================
+
+export type Entity = typeof entities.$inferSelect;
+export type NewEntity = typeof entities.$inferInsert;
+export type Company = typeof companies.$inferSelect;
+export type NewCompany = typeof companies.$inferInsert;
+export type NhsOrganisation = typeof nhsOrganisations.$inferSelect;
+export type NewNhsOrganisation = typeof nhsOrganisations.$inferInsert;
+export type Council = typeof councils.$inferSelect;
+export type NewCouncil = typeof councils.$inferInsert;
 export type Organisation = typeof organisations.$inferSelect;
 export type NewOrganisation = typeof organisations.$inferInsert;
 export type SpendEntry = typeof spendEntries.$inferSelect;
 export type NewSpendEntry = typeof spendEntries.$inferInsert;
-export type Company = typeof companies.$inferSelect;
-export type NewCompany = typeof companies.$inferInsert;
 export type Supplier = typeof suppliers.$inferSelect;
 export type NewSupplier = typeof suppliers.$inferInsert;
 export type Contract = typeof contracts.$inferSelect;

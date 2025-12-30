@@ -39,23 +39,25 @@ export async function GET(request: Request) {
     : "";
 
   try {
-    // Get all organisations with their spend data
+    // Get all organisations with their spend data (using new schema)
     const orgsRes = await db.execute(sql.raw(`
       SELECT 
         o.id,
-        o.name,
-        o.trust_type,
-        o.ods_code,
-        o.icb_ods_code,
-        o.latitude,
-        o.longitude,
+        e.name,
+        nhs.org_sub_type as trust_type,
+        nhs.ods_code,
+        nhs.parent_ods_code as icb_ods_code,
+        e.latitude,
+        e.longitude,
         COALESCE(SUM(se.amount), 0) as total_spend,
         COUNT(DISTINCT se.raw_supplier) as supplier_count,
         COUNT(DISTINCT DATE_TRUNC('month', se.payment_date)) as active_months
       FROM organisations o
+      LEFT JOIN entities e ON o.entity_id = e.id
+      LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
       LEFT JOIN spend_entries se ON o.id = se.organisation_id ${dateFilter ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'` : ""}
-      WHERE o.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
-      GROUP BY o.id, o.name, o.trust_type, o.ods_code, o.icb_ods_code, o.latitude, o.longitude
+      WHERE e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
+      GROUP BY o.id, e.name, nhs.org_sub_type, nhs.ods_code, nhs.parent_ods_code, e.latitude, e.longitude
       HAVING COALESCE(SUM(se.amount), 0) > 0
     `));
 
@@ -86,7 +88,7 @@ export async function GET(request: Request) {
     const trustsByIcbOdsCode: Map<string, OrgData[]> = new Map();
 
     for (const org of orgsRes.rows as any[]) {
-      const isIcb = org.name.toUpperCase().includes(' ICB') || org.name.toUpperCase().includes('INTEGRATED CARE BOARD');
+      const isIcb = org.name?.toUpperCase().includes(' ICB') || org.name?.toUpperCase().includes('INTEGRATED CARE BOARD');
       const orgData: OrgData = {
         id: org.id,
         name: org.name,
@@ -131,7 +133,7 @@ export async function GET(request: Request) {
     // Third pass: group by region
     // Only add ICBs and standalone trusts (trusts without a parent ICB in data)
     for (const org of allOrgs) {
-      const region = getRegionFromName(org.name);
+      const region = getRegionFromName(org.name || "");
       if (!regionData[region]) {
         regionData[region] = {
           totalSpend: 0,
@@ -193,7 +195,8 @@ export async function GET(request: Request) {
           SUM(se.amount) as total_spend
         FROM spend_entries se
         JOIN organisations o ON o.id = se.organisation_id
-        WHERE o.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
+        JOIN entities e ON o.entity_id = e.id
+        WHERE e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
         ${dateFilter}
         GROUP BY se.raw_supplier
         ORDER BY total_spend DESC
@@ -234,4 +237,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

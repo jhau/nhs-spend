@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { companies, suppliers } from "@/db/schema";
+import { eq, and, isNull, inArray } from "drizzle-orm";
+import { entities, companies, suppliers, councils } from "@/db/schema";
 import type { PipelineStage } from "../types";
 import {
   calculateSimilarity,
@@ -7,6 +7,7 @@ import {
   getCompanyProfile,
   sleep,
 } from "@/lib/companies-house";
+import { searchCouncilMetadata } from "@/lib/council-api";
 
 export type MatchSuppliersInput = {
   /**
@@ -14,6 +15,10 @@ export type MatchSuppliersInput = {
    * If not provided, will process all pending suppliers.
    */
   limit?: number;
+  /**
+   * Specific supplier IDs to match.
+   */
+  supplierIds?: number[];
   /**
    * Similarity threshold for auto-matching (0-1).
    * Defaults to 0.9 (90%).
@@ -25,6 +30,114 @@ export type MatchSuppliersInput = {
    */
   minSimilarityThreshold?: number;
 };
+
+/**
+ * Helper to find or create an entity and company record from a Companies House profile.
+ * Returns the entity ID.
+ */
+async function findOrCreateCompanyEntity(
+  db: any,
+  profile: any
+): Promise<number> {
+  // Check if entity already exists by registry_id
+  const existingEntity = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(eq(entities.registryId, profile.company_number))
+    .limit(1);
+
+  if (existingEntity.length > 0) {
+    return existingEntity[0].id;
+  }
+
+  // Create entity
+  const [newEntity] = await db
+    .insert(entities)
+    .values({
+      entityType: "company",
+      registryId: profile.company_number,
+      name: profile.company_name,
+      status: profile.company_status,
+      addressLine1: profile.registered_office_address?.address_line_1 || null,
+      addressLine2: profile.registered_office_address?.address_line_2 || null,
+      locality: profile.registered_office_address?.locality || null,
+      postalCode: profile.registered_office_address?.postal_code || null,
+      country: profile.registered_office_address?.country || null,
+    })
+    .returning({ id: entities.id });
+
+  // Create company details
+  await db.insert(companies).values({
+    entityId: newEntity.id,
+    companyNumber: profile.company_number,
+    companyStatus: profile.company_status,
+    companyType: profile.type,
+    dateOfCreation: profile.date_of_creation || null,
+    dateOfCessation: profile.date_of_cessation || null,
+    jurisdiction: profile.jurisdiction || null,
+    sicCodes: profile.sic_codes || null,
+    previousNames: profile.previous_names || null,
+    rawData: profile,
+    etag: profile.etag || null,
+    fetchedAt: new Date(),
+  });
+
+  return newEntity.id;
+}
+
+/**
+ * Helper to find or create an entity and council record from council metadata.
+ * Returns the entity ID.
+ */
+async function findOrCreateCouncilEntity(
+  db: any,
+  metadata: any
+): Promise<number> {
+  const registryId = metadata.gssCode || metadata.officialName;
+
+  // Check if entity already exists by registry_id
+  const existingEntity = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(eq(entities.entityType, "council"), eq(entities.registryId, registryId))
+    )
+    .limit(1);
+
+  if (existingEntity.length > 0) {
+    return existingEntity[0].id;
+  }
+
+  // Create entity
+  const [newEntity] = await db
+    .insert(entities)
+    .values({
+      entityType: "council",
+      registryId: registryId,
+      name: metadata.officialName,
+      status: "active",
+      latitude: metadata.latitude,
+      longitude: metadata.longitude,
+    })
+    .returning({ id: entities.id });
+
+  // Create council details
+  await db.insert(councils).values({
+    entityId: newEntity.id,
+    gssCode: metadata.gssCode,
+    onsCode: metadata.onsCode,
+    councilType: metadata.councilType,
+    tier: metadata.tier,
+    homepageUrl: metadata.homepageUrl,
+    region: metadata.region,
+    nation: metadata.nation,
+    population: metadata.population,
+    rawData: metadata,
+    fetchedAt: new Date(),
+  });
+
+  return newEntity.id;
+}
 
 export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
   id: "matchSuppliers",
@@ -38,18 +151,26 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
     const autoMatchThreshold = input.autoMatchThreshold ?? 0.9;
     const minSimilarityThreshold = input.minSimilarityThreshold ?? 0.5;
     const limit = input.limit;
+    const supplierIds = input.supplierIds;
 
     await ctx.log({
       level: "info",
       message: "Starting supplier matching process",
-      meta: { limit, autoMatchThreshold, minSimilarityThreshold },
+      meta: { limit, supplierIds, autoMatchThreshold, minSimilarityThreshold },
     });
 
     // Get unmatched suppliers
     let query = ctx.db
       .select({ id: suppliers.id, name: suppliers.name })
       .from(suppliers)
-      .where(eq(suppliers.matchStatus, "pending"));
+      .where(
+        and(
+          eq(suppliers.matchStatus, "pending"),
+          supplierIds && supplierIds.length > 0
+            ? inArray(suppliers.id, supplierIds)
+            : isNull(suppliers.matchAttemptedAt)
+        )
+      );
 
     if (limit) {
       query = query.limit(limit) as any;
@@ -93,11 +214,67 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
             .set({
               matchStatus: "no_match",
               manuallyVerified: true,
+              matchAttemptedAt: new Date(),
               updatedAt: new Date(),
             })
             .where(eq(suppliers.id, supplier.id));
           noMatchCount++;
           continue;
+        }
+
+        // Check for councils first if name contains "council"
+        if (supplier.name.toLowerCase().includes("council")) {
+          const councilMetadata = await searchCouncilMetadata(supplier.name);
+          if (councilMetadata) {
+            const entityId = await findOrCreateCouncilEntity(
+              ctx.db,
+              councilMetadata
+            );
+
+            await ctx.db
+              .update(suppliers)
+              .set({
+                entityId,
+                matchStatus: "matched",
+                matchConfidence: "1.00",
+                manuallyVerified: false,
+                matchAttemptedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(suppliers.id, supplier.id));
+
+            await ctx.log({
+              level: "info",
+              message: `Council auto-matched: ${supplier.name} -> ${councilMetadata.officialName}`,
+              meta: {
+                supplierId: supplier.id,
+                gssCode: councilMetadata.gssCode,
+                entityId,
+              },
+            });
+            matchedCount++;
+            continue;
+          } else {
+            // Name contains "council" but not found in official CSV
+            // Mark for review instead of auto-matching to a company
+            await ctx.db
+              .update(suppliers)
+              .set({
+                matchStatus: "pending_review",
+                matchConfidence: "0.50",
+                matchAttemptedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(suppliers.id, supplier.id));
+
+            await ctx.log({
+              level: "info",
+              message: `Supplier name contains 'council' but not found in local CSV, marking for review: ${supplier.name}`,
+              meta: { supplierId: supplier.id },
+            });
+            skippedCount++;
+            continue;
+          }
         }
 
         // Search Companies House
@@ -134,6 +311,7 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
             .set({
               matchStatus: "no_match",
               manuallyVerified: false,
+              matchAttemptedAt: new Date(),
               updatedAt: new Date(),
             })
             .where(eq(suppliers.id, supplier.id));
@@ -158,52 +336,18 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
               apiKey
             );
 
-            // Check if company exists
-            let companyId: number;
-            const existingCompany = await ctx.db
-              .select({ id: companies.id })
-              .from(companies)
-              .where(eq(companies.companyNumber, profile.company_number))
-              .limit(1);
+            // Find or create entity and company
+            const entityId = await findOrCreateCompanyEntity(ctx.db, profile);
 
-            if (existingCompany.length > 0) {
-              companyId = existingCompany[0].id;
-            } else {
-              const insertedCompany = await ctx.db
-                .insert(companies)
-                .values({
-                  companyNumber: profile.company_number,
-                  companyName: profile.company_name,
-                  companyStatus: profile.company_status,
-                  companyType: profile.type,
-                  dateOfCreation: profile.date_of_creation || null,
-                  jurisdiction: profile.jurisdiction || null,
-                  addressLine1:
-                    profile.registered_office_address?.address_line_1 || null,
-                  addressLine2:
-                    profile.registered_office_address?.address_line_2 || null,
-                  locality: profile.registered_office_address?.locality || null,
-                  postalCode:
-                    profile.registered_office_address?.postal_code || null,
-                  country: profile.registered_office_address?.country || null,
-                  sicCodes: profile.sic_codes || null,
-                  previousNames: profile.previous_names || null,
-                  rawData: profile,
-                  etag: profile.etag || null,
-                  fetchedAt: new Date(),
-                })
-                .returning({ id: companies.id });
-              companyId = insertedCompany[0].id;
-            }
-
-            // Link supplier
+            // Link supplier to entity
             await ctx.db
               .update(suppliers)
               .set({
-                companyId,
+                entityId,
                 matchStatus: "matched",
                 matchConfidence: bestMatch.similarity.toFixed(2),
                 manuallyVerified: false,
+                matchAttemptedAt: new Date(),
                 updatedAt: new Date(),
               })
               .where(eq(suppliers.id, supplier.id));
@@ -216,6 +360,7 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
               meta: {
                 supplierId: supplier.id,
                 companyNumber: profile.company_number,
+                entityId,
                 confidence: bestMatch.similarity,
               },
             });
@@ -246,12 +391,13 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
             .set({
               matchStatus: "no_match",
               manuallyVerified: false,
+              matchAttemptedAt: new Date(),
               updatedAt: new Date(),
             })
             .where(eq(suppliers.id, supplier.id));
           noMatchCount++;
         } else {
-          // Moderate similarity, keep as pending for manual review
+          // Moderate similarity, mark for manual review
           await ctx.log({
             level: "info",
             message: `Moderate match, pending review: ${
@@ -265,6 +411,15 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
               similarity: bestMatch.similarity,
             },
           });
+          await ctx.db
+            .update(suppliers)
+            .set({
+              matchStatus: "pending_review",
+              matchConfidence: bestMatch.similarity.toFixed(2),
+              matchAttemptedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(suppliers.id, supplier.id));
           skippedCount++;
         }
       } catch (err) {

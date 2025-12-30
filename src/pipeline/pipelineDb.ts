@@ -2,6 +2,7 @@ import { and, eq, count, sql, min, max } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
+  entities,
   companies,
   pipelineAssets,
   pipelineRunLogs,
@@ -17,17 +18,21 @@ import type { PipelineLogLevel } from "./types";
 export async function createPipelineRun(input: {
   assetId?: number | null;
   dryRun: boolean;
+  orgType?: string | null;
   createdBy?: string | null;
   fromStageId?: string;
   toStageId?: string;
+  params?: Record<string, any> | null;
 }): Promise<{ runId: number }> {
   const [row] = await db
     .insert(pipelineRuns)
     .values({
       assetId: input.assetId ?? null,
       dryRun: input.dryRun,
+      orgType: input.orgType || "nhs",
       fromStageId: input.fromStageId ?? null,
       toStageId: input.toStageId ?? null,
+      params: input.params ?? null,
       trigger: "web",
       createdBy: input.createdBy ?? null,
       status: "queued",
@@ -158,17 +163,19 @@ export async function getRunSuppliers(runId: number, limit = 50, offset = 0) {
       name: suppliers.name,
       matchStatus: suppliers.matchStatus,
       matchConfidence: suppliers.matchConfidence,
-      companyId: suppliers.companyId,
-      companyName: companies.companyName,
+      entityId: suppliers.entityId,
+      entityName: entities.name,
+      entityType: entities.entityType,
       companyNumber: companies.companyNumber,
       createdAt: suppliers.createdAt,
       updatedAt: suppliers.updatedAt,
     })
     .from(suppliers)
     .innerJoin(spendEntries, eq(suppliers.id, spendEntries.supplierId))
-    .leftJoin(companies, eq(suppliers.companyId, companies.id))
+    .leftJoin(entities, eq(suppliers.entityId, entities.id))
+    .leftJoin(companies, eq(entities.id, companies.entityId))
     .where(eq(spendEntries.assetId, run.assetId))
-    .groupBy(suppliers.id, companies.id)
+    .groupBy(suppliers.id, entities.id, companies.entityId)
     .limit(limit)
     .offset(offset);
 }
@@ -207,4 +214,3 @@ export async function getRunDateRange(runId: number) {
     maxDate: row.maxDate,
   };
 }
-

@@ -46,6 +46,8 @@ type RunDetailResponse = {
     status: string;
     dryRun: boolean;
     trigger: string;
+    fromStageId?: string | null;
+    toStageId?: string | null;
     createdBy?: string | null;
     startedAt?: string | null;
     finishedAt?: string | null;
@@ -89,8 +91,9 @@ type RunDetailResponse = {
     name: string;
     matchStatus: string;
     matchConfidence: string | null;
-    companyId: number | null;
-    companyName: string | null;
+    entityId: number | null;
+    entityName: string | null;
+    entityType: string | null;
     companyNumber: string | null;
     createdAt: string;
     updatedAt: string;
@@ -151,12 +154,22 @@ type Metrics = {
   trustsInserted?: number;
   trustsUpdated?: number;
   trustsCreatedWithoutMetadata?: number;
+  councilsInserted?: number;
+  councilsUpdated?: number;
   suppliersInserted?: number;
   sheetsProcessed?: number;
   paymentsInserted?: number;
   paymentsSkipped?: number;
   skippedReasons?: Record<string, number>;
   dryRun?: boolean;
+  councilsDiscovered?: number;
+  suppliersDiscovered?: number;
+  // Match stage metrics
+  totalProcessed?: number;
+  matchedCount?: number;
+  noMatchCount?: number;
+  skippedCount?: number;
+  errorCount?: number;
   [key: string]: unknown;
 };
 
@@ -165,10 +178,32 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
 
   if (metrics.dryRun) {
     return (
-      <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
-        <p className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
-          Dry Run - No changes were made to the database
-        </p>
+      <div className="space-y-4">
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
+          <p className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+            Dry Run - No changes were made to the database
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="rounded-lg border bg-card p-4 space-y-2">
+            <p className="text-2xl font-bold tracking-tight">
+              {formatNumber(metrics.sheets ?? metrics.sheetsProcessed)}
+            </p>
+            <p className="text-xs text-muted-foreground">Sheets to Process</p>
+          </div>
+          <div className="rounded-lg border bg-card p-4 space-y-2">
+            <p className="text-2xl font-bold tracking-tight">
+              {formatNumber(metrics.councilsDiscovered)}
+            </p>
+            <p className="text-xs text-muted-foreground">Councils Discovered</p>
+          </div>
+          <div className="rounded-lg border bg-card p-4 space-y-2">
+            <p className="text-2xl font-bold tracking-tight">
+              {formatNumber(metrics.suppliersDiscovered)}
+            </p>
+            <p className="text-xs text-muted-foreground">Suppliers Discovered</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -180,6 +215,7 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
       icon: Receipt,
       color: "text-emerald-600",
       bgColor: "bg-emerald-500/10",
+      hidden: metrics.paymentsInserted === undefined,
     },
     {
       label: "Sheets Processed",
@@ -187,13 +223,15 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
       icon: FileSpreadsheet,
       color: "text-blue-600",
       bgColor: "bg-blue-500/10",
+      hidden: metrics.sheetsProcessed === undefined,
     },
     {
-      label: "Suppliers Added",
+      label: "Suppliers Discovered",
       value: formatNumber(metrics.suppliersInserted),
       icon: Users,
       color: "text-orange-600",
       bgColor: "bg-orange-500/10",
+      hidden: metrics.suppliersInserted === undefined,
     },
     {
       label: "Trusts Added",
@@ -204,6 +242,7 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
       icon: Building2,
       color: "text-violet-600",
       bgColor: "bg-violet-500/10",
+      hidden: !metrics.trustsInserted && !metrics.trustsCreatedWithoutMetadata,
     },
     {
       label: "Trusts Updated",
@@ -211,6 +250,23 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
       icon: Building2,
       color: "text-indigo-600",
       bgColor: "bg-indigo-500/10",
+      hidden: !metrics.trustsUpdated,
+    },
+    {
+      label: "Councils Added",
+      value: formatNumber(metrics.councilsInserted),
+      icon: Building2,
+      color: "text-pink-600",
+      bgColor: "bg-pink-500/10",
+      hidden: !metrics.councilsInserted,
+    },
+    {
+      label: "Councils Updated",
+      value: formatNumber(metrics.councilsUpdated),
+      icon: Building2,
+      color: "text-rose-600",
+      bgColor: "bg-rose-500/10",
+      hidden: !metrics.councilsUpdated,
     },
     {
       label: "Rows Skipped",
@@ -218,27 +274,55 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
       icon: AlertTriangle,
       color: "text-amber-600",
       bgColor: "bg-amber-500/10",
+      hidden: !metrics.paymentsSkipped,
+    },
+    // Match stage specific
+    {
+      label: "Suppliers Matched",
+      value: formatNumber(metrics.matchedCount),
+      icon: CheckCircle2,
+      color: "text-emerald-600",
+      bgColor: "bg-emerald-500/10",
+      hidden: metrics.matchedCount === undefined,
+    },
+    {
+      label: "No Match Found",
+      value: formatNumber(metrics.noMatchCount),
+      icon: XCircle,
+      color: "text-destructive",
+      bgColor: "bg-destructive/10",
+      hidden: metrics.noMatchCount === undefined,
+    },
+    {
+      label: "Matching Errors",
+      value: formatNumber(metrics.errorCount),
+      icon: AlertTriangle,
+      color: "text-red-600",
+      bgColor: "bg-red-500/10",
+      hidden: !metrics.errorCount,
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      {stats.map((stat) => (
-        <div
-          key={stat.label}
-          className="rounded-lg border bg-card p-4 space-y-2"
-        >
-          <div className="flex items-center gap-2">
-            <div className={cn("rounded-md p-1.5", stat.bgColor)}>
-              <stat.icon className={cn("size-4", stat.color)} />
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+      {stats
+        .filter((s) => !s.hidden)
+        .map((stat) => (
+          <div
+            key={stat.label}
+            className="rounded-lg border bg-card p-4 space-y-2"
+          >
+            <div className="flex items-center gap-2">
+              <div className={cn("rounded-md p-1.5", stat.bgColor)}>
+                <stat.icon className={cn("size-4", stat.color)} />
+              </div>
+            </div>
+            <div>
+              <p className="text-2xl font-bold tracking-tight">{stat.value}</p>
+              <p className="text-xs text-muted-foreground">{stat.label}</p>
             </div>
           </div>
-          <div>
-            <p className="text-2xl font-bold tracking-tight">{stat.value}</p>
-            <p className="text-xs text-muted-foreground">{stat.label}</p>
-          </div>
-        </div>
-      ))}
+        ))}
     </div>
   );
 }
@@ -387,8 +471,9 @@ function SuppliersTable({
           <TableHeader>
             <TableRow>
               <TableHead className="w-[300px]">Supplier Name</TableHead>
+              <TableHead className="w-[120px]">Type</TableHead>
               <TableHead className="w-[120px]">Match Status</TableHead>
-              <TableHead className="w-[200px]">Companies House Match</TableHead>
+              <TableHead className="w-[200px]">Match Entity</TableHead>
               <TableHead className="w-[80px]">Confidence</TableHead>
             </TableRow>
           </TableHeader>
@@ -402,6 +487,15 @@ function SuppliersTable({
                   >
                     {s.name}
                   </Link>
+                </TableCell>
+                <TableCell className="w-[120px]">
+                  {s.entityType ? (
+                    <Badge variant="outline" className="capitalize">
+                      {s.entityType.replace("_", " ")}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">—</span>
+                  )}
                 </TableCell>
                 <TableCell className="w-[120px]">
                   <Badge
@@ -419,13 +513,15 @@ function SuppliersTable({
                   </Badge>
                 </TableCell>
                 <TableCell className="w-[200px] max-w-[200px]">
-                  {s.companyName ? (
+                  {s.entityName ? (
                     <div className="flex flex-col break-words whitespace-normal overflow-wrap-anywhere">
-                      <span className="text-sm break-words whitespace-normal">
-                        {s.companyName}
+                      <span className="text-sm break-words whitespace-normal font-medium">
+                        {s.entityName}
                       </span>
                       <span className="text-xs text-muted-foreground font-mono break-all whitespace-normal">
-                        {s.companyNumber}
+                        {s.entityType === "company" && s.companyNumber
+                          ? s.companyNumber
+                          : s.entityType?.replace("_", " ")}
                       </span>
                     </div>
                   ) : (
@@ -441,7 +537,7 @@ function SuppliersTable({
                 </TableCell>
                 <TableCell className="w-[80px]">
                   {s.matchConfidence ? (
-                    <span className="text-sm">
+                    <span className="text-sm font-medium">
                       {(Number(s.matchConfidence) * 100).toFixed(0)}%
                     </span>
                   ) : (
@@ -716,6 +812,17 @@ export default function PipelineRunPage({
                   <Loader2 className="size-5 text-muted-foreground animate-spin" />
                 )}
                 <StatusBadge status={run.status} />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Type:</span>
+                <Badge variant="outline" className="font-normal capitalize">
+                  {run.fromStageId === "matchSuppliers" 
+                    ? "Match Suppliers" 
+                    : run.fromStageId?.startsWith("import") || !run.fromStageId 
+                    ? "Import Spending" 
+                    : run.fromStageId.replace(/([A-Z])/g, ' $1').trim()}
+                </Badge>
               </div>
 
               {run.dryRun && (

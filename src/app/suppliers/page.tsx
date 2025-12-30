@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   Search,
   Play,
@@ -50,8 +51,9 @@ type Supplier = {
   name: string;
   matchStatus: string;
   matchConfidence: string | null;
-  companyId: number | null;
-  companyName: string | null;
+  entityId: number | null;
+  entityName: string | null;
+  entityType: string | null;
   companyNumber: string | null;
   totalSpend: number;
   transactionCount: number;
@@ -68,24 +70,70 @@ type Suggestion = {
 type SuppliersResponse = {
   suppliers: Supplier[];
   totalCount: number;
+  matchedCount: number;
+  pendingCount: number;
   limit: number;
   offset: number;
 };
 
 export default function SuppliersPage() {
-  const [activeTab, setActiveTab] = useState<"directory" | "matching">("directory");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const activeTab =
+    (searchParams.get("tab") as "directory" | "matched" | "matching") ||
+    "directory";
+  const statusFilter = searchParams.get("status") || "all";
+  const page = parseInt(searchParams.get("page") || "1", 10);
+
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [matchedCount, setMatchedCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
   const limit = 20;
+
+  const updateParams = useCallback(
+    (newParams: Record<string, string | number | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(newParams).forEach(([key, value]) => {
+        if (value === null) {
+          params.delete(key);
+        } else {
+          params.set(key, value.toString());
+        }
+      });
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [searchParams, pathname, router]
+  );
+
+  const setActiveTab = (tab: "directory" | "matched" | "matching") => {
+    updateParams({ tab, page: 1 });
+  };
+
+  const setStatusFilter = (status: string) => {
+    updateParams({ status, page: 1 });
+  };
+
+  const setPage = (p: number | ((prev: number) => number)) => {
+    const newPage = typeof p === "function" ? p(page) : p;
+    updateParams({ page: newPage });
+  };
+
+  // Matched state
+  const [matchedSuppliers, setMatchedSuppliers] = useState<Supplier[]>([]);
+  const [matchedLoading, setMatchedLoading] = useState(false);
 
   // Matching state
   const [pendingSuppliers, setPendingSuppliers] = useState<Supplier[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<Record<number, Suggestion[]>>({});
+  const [suggestions, setSuggestions] = useState<Record<number, Suggestion[]>>(
+    {}
+  );
   const [searching, setSearching] = useState<Record<number, boolean>>({});
   const [linking, setLinking] = useState<Record<number, boolean>>({});
 
@@ -93,11 +141,17 @@ export default function SuppliersPage() {
     setLoading(true);
     try {
       const offset = (page - 1) * limit;
-      const resp = await fetch(`/api/suppliers?limit=${limit}&offset=${offset}`);
+      const statusParam =
+        statusFilter !== "all" ? `&status=${statusFilter}` : "";
+      const resp = await fetch(
+        `/api/suppliers?limit=${limit}&offset=${offset}${statusParam}`
+      );
       const data = (await resp.json()) as SuppliersResponse;
       if (data.suppliers) {
         setSuppliers(data.suppliers);
         setTotalCount(data.totalCount);
+        setMatchedCount(data.matchedCount);
+        setPendingCount(data.pendingCount);
       }
     } catch (err) {
       setError("Failed to fetch suppliers");
@@ -107,10 +161,28 @@ export default function SuppliersPage() {
     }
   }
 
+  async function fetchMatchedSuppliers() {
+    setMatchedLoading(true);
+    try {
+      // Fetch all matched suppliers (limit 1000 for "all")
+      const resp = await fetch("/api/suppliers?status=matched&limit=1000");
+      const data = await resp.json();
+      if (data.suppliers) {
+        setMatchedSuppliers(data.suppliers);
+      }
+    } catch (err) {
+      console.error("Failed to fetch matched suppliers", err);
+    } finally {
+      setMatchedLoading(false);
+    }
+  }
+
   async function fetchPendingSuppliers() {
     setPendingLoading(true);
     try {
-      const resp = await fetch("/api/matching/suppliers?status=pending&limit=50");
+      const resp = await fetch(
+        "/api/matching/suppliers?status=pending&limit=100"
+      );
       const data = await resp.json();
       if (data.suppliers) {
         setPendingSuppliers(data.suppliers);
@@ -123,14 +195,32 @@ export default function SuppliersPage() {
   }
 
   useEffect(() => {
+    // Always fetch general counts for the summary cards and tab labels
+    async function fetchCounts() {
+      try {
+        const resp = await fetch("/api/suppliers?limit=1");
+        const data = await resp.json();
+        setTotalCount(data.totalCount);
+        setMatchedCount(data.matchedCount);
+        setPendingCount(data.pendingCount);
+      } catch (err) {
+        console.error("Failed to fetch counts", err);
+      }
+    }
+    void fetchCounts();
+  }, []);
+
+  useEffect(() => {
     if (activeTab === "directory") {
       void fetchSuppliers();
+    } else if (activeTab === "matched") {
+      void fetchMatchedSuppliers();
     } else {
       void fetchPendingSuppliers();
     }
-  }, [page, activeTab]);
+  }, [page, activeTab, statusFilter]);
 
-  async function startMatching() {
+  async function startMatching(supplierIds?: number[]) {
     setError(null);
     setRunning(true);
     try {
@@ -141,6 +231,7 @@ export default function SuppliersPage() {
           fromStageId: "matchSuppliers",
           toStageId: "matchSuppliers",
           dryRun: false,
+          params: supplierIds ? { supplierIds } : undefined,
         }),
       });
       if (!resp.ok) {
@@ -222,87 +313,101 @@ export default function SuppliersPage() {
             Manage and view suppliers discovered in the spending data.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center bg-muted p-1 rounded-lg">
-            <Button
-              variant={activeTab === "directory" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setActiveTab("directory")}
-              className="px-4"
-            >
-              Directory
-            </Button>
-            <Button
-              variant={activeTab === "matching" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setActiveTab("matching")}
-              className="px-4"
-            >
-              Matching
-            </Button>
-          </div>
-          <Button onClick={() => void startMatching()} disabled={running}>
-            <Play className="mr-2 size-4" />
-            {running ? "Starting..." : "Run Matching"}
-          </Button>
-        </div>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Users className="size-4" />
+              Total Suppliers
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <TrendingUp className="size-4" />
+              Matched Suppliers
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{matchedCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Building2 className="size-4" />
+              Pending Review
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{pendingCount}</div>
+          </CardContent>
+        </Card>
       </div>
 
       {activeTab === "directory" ? (
         <>
-          <div className="grid gap-6 md:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <Users className="size-4" />
-                  Total Suppliers
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{totalCount}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <TrendingUp className="size-4" />
-                  Matched Suppliers
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {suppliers.filter((s) => s.matchStatus === "matched").length}
-                  <span className="text-sm font-normal text-muted-foreground ml-2">
-                    on this page
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <Building2 className="size-4" />
-                  Pending Review
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {suppliers.filter((s) => s.matchStatus === "pending").length}
-                  <span className="text-sm font-normal text-muted-foreground ml-2">
-                    on this page
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
           <Card>
-            <CardHeader>
-              <CardTitle>Supplier Directory</CardTitle>
-              <CardDescription>
-                All suppliers found in the spending datasets, ranked by total
-                spend.
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div className="space-y-1">
+                <CardTitle>Supplier Directory</CardTitle>
+                <CardDescription>
+                  All suppliers found in the spending datasets, ranked by total
+                  spend.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2 bg-muted p-1 rounded-lg text-xs">
+                <div className="flex items-center mr-2 border-r pr-2 gap-1">
+                  <Button
+                    variant={statusFilter === "all" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setStatusFilter("all")}
+                    className="h-8 px-3 text-xs"
+                  >
+                    All
+                  </Button>
+                  <Button
+                    variant={statusFilter === "matched" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setStatusFilter("matched")}
+                    className="h-8 px-3 text-xs"
+                  >
+                    Matched
+                  </Button>
+                  <Button
+                    variant={statusFilter === "pending" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setStatusFilter("pending")}
+                    className="h-8 px-3 text-xs"
+                  >
+                    Pending
+                  </Button>
+                </div>
+                <Button
+                  onClick={() => {
+                    const pendingIds = suppliers
+                      .filter((s) => s.matchStatus === "pending")
+                      .map((s) => s.id);
+                    if (pendingIds.length > 0) {
+                      void startMatching(pendingIds);
+                    } else {
+                      alert("No pending suppliers on this page to match.");
+                    }
+                  }}
+                  disabled={running || loading}
+                  size="sm"
+                  className="h-8 px-3 text-xs"
+                >
+                  <Play className="mr-2 size-3" />
+                  {running ? "Starting..." : "Match Page Pending"}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -355,13 +460,15 @@ export default function SuppliersPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {s.companyName ? (
+                          {s.entityName ? (
                             <div className="flex flex-col">
                               <span className="text-sm truncate max-w-[200px]">
-                                {s.companyName}
+                                {s.entityName}
                               </span>
                               <span className="text-xs text-muted-foreground">
-                                {s.companyNumber}
+                                {s.entityType === "company" && s.companyNumber
+                                  ? `#${s.companyNumber}`
+                                  : s.entityType?.replace("_", " ")}
                               </span>
                             </div>
                           ) : (
@@ -419,25 +526,126 @@ export default function SuppliersPage() {
             </CardContent>
           </Card>
         </>
+      ) : activeTab === "matched" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Matched Suppliers</CardTitle>
+            <CardDescription>
+              All suppliers that have been successfully linked to a Companies
+              House entity.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Supplier Name</TableHead>
+                  <TableHead>Companies House Entity</TableHead>
+                  <TableHead className="text-right">Total Spend</TableHead>
+                  <TableHead className="text-right">Transactions</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {matchedLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8">
+                      <Loader2 className="size-6 animate-spin mx-auto text-muted-foreground" />
+                    </TableCell>
+                  </TableRow>
+                ) : matchedSuppliers.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-8 text-muted-foreground"
+                    >
+                      No matched suppliers found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  matchedSuppliers.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">
+                        <Link
+                          href={`/suppliers/${encodeURIComponent(s.name)}`}
+                          className="hover:underline text-primary"
+                        >
+                          {s.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm truncate max-w-[250px]">
+                            {s.entityName}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {s.companyNumber
+                              ? `#${s.companyNumber}`
+                              : "No company number"}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrency(s.totalSpend || 0)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {s.transactionCount || 0}
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" asChild>
+                          <Link
+                            href={`/suppliers/${encodeURIComponent(s.name)}`}
+                          >
+                            <ExternalLink className="size-4" />
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Unmatched Suppliers</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void fetchPendingSuppliers()}
-                disabled={pendingLoading}
-              >
-                <RefreshCw
-                  className={cn(
-                    "mr-2 size-4",
-                    pendingLoading && "animate-spin"
-                  )}
-                />
-                Refresh
-              </Button>
+              <span>Review Pending Suppliers ({pendingCount})</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const pendingIds = pendingSuppliers.map((s) => s.id);
+                    if (pendingIds.length > 0) {
+                      void startMatching(pendingIds);
+                    } else {
+                      alert("No pending suppliers to match.");
+                    }
+                  }}
+                  disabled={running}
+                >
+                  <Play
+                    className={cn("mr-2 size-4", running && "animate-spin")}
+                  />
+                  {running ? "Starting..." : "Match Page Pending"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void fetchPendingSuppliers()}
+                  disabled={pendingLoading}
+                >
+                  <RefreshCw
+                    className={cn(
+                      "mr-2 size-4",
+                      pendingLoading && "animate-spin"
+                    )}
+                  />
+                  Refresh
+                </Button>
+              </div>
             </CardTitle>
             <CardDescription>
               These suppliers have been discovered but not yet linked to a
@@ -507,7 +715,10 @@ export default function SuppliersPage() {
                                     size="sm"
                                     className="h-8 bg-emerald-600 hover:bg-emerald-700"
                                     onClick={() =>
-                                      void linkSupplier(s.id, sub.company_number)
+                                      void linkSupplier(
+                                        s.id,
+                                        sub.company_number
+                                      )
                                     }
                                     disabled={linking[s.id]}
                                   >
@@ -566,7 +777,9 @@ export default function SuppliersPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Manual Entry</DropdownMenuLabel>
+                              <DropdownMenuLabel>
+                                Manual Entry
+                              </DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => {
@@ -591,4 +804,3 @@ export default function SuppliersPage() {
     </div>
   );
 }
-

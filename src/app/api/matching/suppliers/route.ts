@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { suppliers, companies } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { suppliers, entities } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import stringSimilarity from "string-similarity";
 
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
         name: suppliers.name,
         matchStatus: suppliers.matchStatus,
         matchConfidence: suppliers.matchConfidence,
-        companyId: suppliers.companyId,
+        entityId: suppliers.entityId,
       })
       .from(suppliers)
       .where(eq(suppliers.matchStatus, status))
@@ -52,4 +52,3 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to fetch suppliers" }, { status: 500 });
   }
 }
-

@@ -32,17 +32,18 @@ export async function GET(request: Request) {
       sql.raw(`
       SELECT 
         o.id,
-        o.name,
+        e.name,
         COALESCE(SUM(se.amount), 0) as total_spend,
         COUNT(DISTINCT se.raw_supplier) as supplier_count
       FROM organisations o
+      LEFT JOIN entities e ON o.entity_id = e.id
       LEFT JOIN spend_entries se ON o.id = se.organisation_id ${
         dateFilter
           ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'`
           : ""
       }
-      WHERE o.name IN ${PARENT_ORG_FILTER}
-      GROUP BY o.id, o.name
+      WHERE e.name IN ${PARENT_ORG_FILTER}
+      GROUP BY o.id, e.name
       ORDER BY total_spend DESC
     `)
     );
@@ -54,15 +55,18 @@ export async function GET(request: Request) {
         (SELECT COUNT(DISTINCT se.organisation_id) 
          FROM spend_entries se 
          JOIN organisations o ON o.id = se.organisation_id 
-         WHERE o.name NOT IN ${PARENT_ORG_FILTER} ${dateFilter}) as total_buyers,
+         JOIN entities e ON o.entity_id = e.id
+         WHERE e.name NOT IN ${PARENT_ORG_FILTER} ${dateFilter}) as total_buyers,
         (SELECT COUNT(DISTINCT se.organisation_id) 
          FROM spend_entries se 
          JOIN organisations o ON o.id = se.organisation_id 
+         JOIN entities e ON o.entity_id = e.id
          WHERE payment_date >= CURRENT_DATE - INTERVAL '90 days'
-         AND o.name NOT IN ${PARENT_ORG_FILTER} ${dateFilter}) as active_last_90_days,
+         AND e.name NOT IN ${PARENT_ORG_FILTER} ${dateFilter}) as active_last_90_days,
         (SELECT SUM(amount) FROM spend_entries se 
          JOIN organisations o ON o.id = se.organisation_id
-         WHERE o.name NOT IN ${PARENT_ORG_FILTER} ${dateFilter}) as total_spend
+         JOIN entities e ON o.entity_id = e.id
+         WHERE e.name NOT IN ${PARENT_ORG_FILTER} ${dateFilter}) as total_spend
     `)
     );
     const summaryResult = summaryRes.rows[0] as any;
@@ -73,8 +77,8 @@ export async function GET(request: Request) {
         WITH buyer_stats AS (
           SELECT 
             o.id,
-            o.name,
-            o.trust_type,
+            e.name,
+            nhs.org_sub_type as trust_type,
             COALESCE(SUM(se.amount), 0) as total_spend,
             COUNT(DISTINCT se.raw_supplier) as supplier_count,
             (
@@ -86,12 +90,14 @@ export async function GET(request: Request) {
               LIMIT 1
             ) as top_supplier
           FROM organisations o
+          LEFT JOIN entities e ON o.entity_id = e.id
+          LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
           LEFT JOIN spend_entries se ON o.id = se.organisation_id ${sql.raw(
             dateFilter
           )}
-          WHERE o.name ILIKE ${"%" + search + "%"}
-            AND o.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
-          GROUP BY o.id, o.name, o.trust_type
+          WHERE e.name ILIKE ${"%" + search + "%"}
+            AND e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
+          GROUP BY o.id, e.name, nhs.org_sub_type
           HAVING COALESCE(SUM(se.amount), 0) > 0
           ORDER BY total_spend DESC
         )
@@ -102,8 +108,8 @@ export async function GET(request: Request) {
         WITH buyer_stats AS (
           SELECT 
             o.id,
-            o.name,
-            o.trust_type,
+            e.name,
+            nhs.org_sub_type as trust_type,
             COALESCE(SUM(se.amount), 0) as total_spend,
             COUNT(DISTINCT se.raw_supplier) as supplier_count,
             (
@@ -115,9 +121,11 @@ export async function GET(request: Request) {
               LIMIT 1
             ) as top_supplier
           FROM organisations o
+          LEFT JOIN entities e ON o.entity_id = e.id
+          LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
           LEFT JOIN spend_entries se ON o.id = se.organisation_id ${dateFilter}
-          WHERE o.name NOT IN ${PARENT_ORG_FILTER}
-          GROUP BY o.id, o.name, o.trust_type
+          WHERE e.name NOT IN ${PARENT_ORG_FILTER}
+          GROUP BY o.id, e.name, nhs.org_sub_type
           HAVING COALESCE(SUM(se.amount), 0) > 0
           ORDER BY total_spend DESC
         )
@@ -132,17 +140,19 @@ export async function GET(request: Request) {
       ? sql`
           SELECT COUNT(DISTINCT o.id) as count
           FROM organisations o
+          JOIN entities e ON o.entity_id = e.id
           INNER JOIN spend_entries se ON o.id = se.organisation_id ${sql.raw(
             dateFilter
           )}
-          WHERE o.name ILIKE ${"%" + search + "%"}
-            AND o.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
+          WHERE e.name ILIKE ${"%" + search + "%"}
+            AND e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
         `
       : sql.raw(`
           SELECT COUNT(DISTINCT o.id) as count
           FROM organisations o
+          JOIN entities e ON o.entity_id = e.id
           INNER JOIN spend_entries se ON o.id = se.organisation_id ${dateFilter}
-          WHERE o.name NOT IN ${PARENT_ORG_FILTER}
+          WHERE e.name NOT IN ${PARENT_ORG_FILTER}
         `);
     const countResult = (await db.execute(countRes)).rows[0] as any;
 

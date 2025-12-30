@@ -1,6 +1,6 @@
 {
-  "id": "f83bf7a2-b96d-4d84-8feb-8c4613718ae1",
-  "prevId": "c6f53472-8790-4893-a32d-0680f6003c65",
+  "id": "4e918a85-8b19-47c3-8a23-abd2a6f5c183",
+  "prevId": "2432a83c-4a11-4b4a-a618-11d95c5fc183",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -160,20 +160,14 @@
       "name": "companies",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
           "primaryKey": true,
           "notNull": true
         },
         "company_number": {
           "name": "company_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "company_name": {
-          "name": "company_name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -196,38 +190,14 @@
           "primaryKey": false,
           "notNull": false
         },
+        "date_of_cessation": {
+          "name": "date_of_cessation",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "jurisdiction": {
           "name": "jurisdiction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_line_1": {
-          "name": "address_line_1",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_line_2": {
-          "name": "address_line_2",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "locality": {
-          "name": "locality",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "postal_code": {
-          "name": "postal_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "country": {
-          "name": "country",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -261,13 +231,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {
@@ -282,36 +245,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "companies_company_name_idx": {
-          "name": "companies_company_name_idx",
-          "columns": [
-            {
-              "expression": "company_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "companies_postal_code_idx": {
-          "name": "companies_postal_code_idx",
-          "columns": [
-            {
-              "expression": "postal_code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -332,7 +265,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "companies_entity_id_entities_id_fk": {
+          "name": "companies_entity_id_entities_id_fk",
+          "tableFrom": "companies",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -572,8 +519,132 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.organisations": {
-      "name": "organisations",
+    "public.councils": {
+      "name": "councils",
+      "schema": "",
+      "columns": {
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "gss_code": {
+          "name": "gss_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ons_code": {
+          "name": "ons_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "council_type": {
+          "name": "council_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tier": {
+          "name": "tier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "homepage_url": {
+          "name": "homepage_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nation": {
+          "name": "nation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "population": {
+          "name": "population",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_data": {
+          "name": "raw_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "councils_gss_code_unique": {
+          "name": "councils_gss_code_unique",
+          "columns": [
+            {
+              "expression": "gss_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "councils_type_idx": {
+          "name": "councils_type_idx",
+          "columns": [
+            {
+              "expression": "council_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "councils_entity_id_entities_id_fk": {
+          "name": "councils_entity_id_entities_id_fk",
+          "tableFrom": "councils",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.entities": {
+      "name": "entities",
       "schema": "",
       "columns": {
         "id": {
@@ -582,32 +653,56 @@
           "primaryKey": true,
           "notNull": true
         },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_id": {
+          "name": "registry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "name": {
           "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "trust_type": {
-          "name": "trust_type",
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "ods_code": {
-          "name": "ods_code",
+        "address_line_1": {
+          "name": "address_line_1",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "post_code": {
-          "name": "post_code",
+        "address_line_2": {
+          "name": "address_line_2",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "icb_ods_code": {
-          "name": "icb_ods_code",
+        "locality": {
+          "name": "locality",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "postal_code": {
+          "name": "postal_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "country": {
+          "name": "country",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -621,6 +716,258 @@
         "longitude": {
           "name": "longitude",
           "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "entities_type_registry_unique": {
+          "name": "entities_type_registry_unique",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "registry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "entities_name_idx": {
+          "name": "entities_name_idx",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "entities_type_idx": {
+          "name": "entities_type_idx",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "entities_postal_code_idx": {
+          "name": "entities_postal_code_idx",
+          "columns": [
+            {
+              "expression": "postal_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nhs_organisations": {
+      "name": "nhs_organisations",
+      "schema": "",
+      "columns": {
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ods_code": {
+          "name": "ods_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_type": {
+          "name": "org_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_sub_type": {
+          "name": "org_sub_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parent_ods_code": {
+          "name": "parent_ods_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nhs_region": {
+          "name": "nhs_region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "open_date": {
+          "name": "open_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "close_date": {
+          "name": "close_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "raw_data": {
+          "name": "raw_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "nhs_organisations_ods_code_unique": {
+          "name": "nhs_organisations_ods_code_unique",
+          "columns": [
+            {
+              "expression": "ods_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nhs_organisations_type_idx": {
+          "name": "nhs_organisations_type_idx",
+          "columns": [
+            {
+              "expression": "org_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nhs_organisations_parent_idx": {
+          "name": "nhs_organisations_parent_idx",
+          "columns": [
+            {
+              "expression": "parent_ods_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nhs_organisations_entity_id_entities_id_fk": {
+          "name": "nhs_organisations_entity_id_entities_id_fk",
+          "tableFrom": "nhs_organisations",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.organisations": {
+      "name": "organisations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -657,26 +1004,11 @@
         }
       },
       "indexes": {
-        "organisations_ods_code_unique": {
-          "name": "organisations_ods_code_unique",
+        "organisations_entity_unique": {
+          "name": "organisations_entity_unique",
           "columns": [
             {
-              "expression": "ods_code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "organisations_name_unique": {
-          "name": "organisations_name_unique",
-          "columns": [
-            {
-              "expression": "name",
+              "expression": "entity_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -688,7 +1020,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "organisations_entity_id_entities_id_fk": {
+          "name": "organisations_entity_id_entities_id_fk",
+          "tableFrom": "organisations",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -980,7 +1326,7 @@
           "name": "asset_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "trigger": {
           "name": "trigger",
@@ -1002,12 +1348,31 @@
           "notNull": true,
           "default": "'queued'"
         },
+        "org_type": {
+          "name": "org_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'nhs'"
+        },
         "dry_run": {
           "name": "dry_run",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "from_stage_id": {
+          "name": "from_stage_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_stage_id": {
+          "name": "to_stage_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "started_at": {
           "name": "started_at",
@@ -1088,6 +1453,92 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pipeline_skipped_rows": {
+      "name": "pipeline_skipped_rows",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sheet_name": {
+          "name": "sheet_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_number": {
+          "name": "row_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw_data": {
+          "name": "raw_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pipeline_skipped_rows_run_idx": {
+          "name": "pipeline_skipped_rows_run_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pipeline_skipped_rows_run_id_pipeline_runs_id_fk": {
+          "name": "pipeline_skipped_rows_run_id_pipeline_runs_id_fk",
+          "tableFrom": "pipeline_skipped_rows",
+          "tableTo": "pipeline_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -1303,8 +1754,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "company_id": {
-          "name": "company_id",
+        "entity_id": {
+          "name": "entity_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -1319,6 +1770,12 @@
         "match_confidence": {
           "name": "match_confidence",
           "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match_attempted_at": {
+          "name": "match_attempted_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -1360,11 +1817,11 @@
           "method": "btree",
           "with": {}
         },
-        "suppliers_company_idx": {
-          "name": "suppliers_company_idx",
+        "suppliers_entity_idx": {
+          "name": "suppliers_entity_idx",
           "columns": [
             {
-              "expression": "company_id",
+              "expression": "entity_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1392,12 +1849,12 @@
         }
       },
       "foreignKeys": {
-        "suppliers_company_id_companies_id_fk": {
-          "name": "suppliers_company_id_companies_id_fk",
+        "suppliers_entity_id_entities_id_fk": {
+          "name": "suppliers_entity_id_entities_id_fk",
           "tableFrom": "suppliers",
-          "tableTo": "companies",
+          "tableTo": "entities",
           "columnsFrom": [
-            "company_id"
+            "entity_id"
           ],
           "columnsTo": [
             "id"

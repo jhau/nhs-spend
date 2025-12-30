@@ -1,0 +1,1 @@
+ALTER TABLE "suppliers" ADD COLUMN "match_attempted_at" timestamp with time zone;

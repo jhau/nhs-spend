@@ -75,6 +75,7 @@ function formatFileSize(bytes: number) {
 export default function PipelinePage() {
   const [file, setFile] = useState<File | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
+  const [orgType, setOrgType] = useState<"nhs" | "council">("nhs");
   const [uploading, setUploading] = useState(false);
   const [running, setRunning] = useState(false);
   const [runId, setRunId] = useState<number | null>(null);
@@ -323,7 +324,11 @@ export default function PipelinePage() {
       const resp = await fetch("/api/pipeline/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assetId: targetAssetId, dryRun: false }),
+        body: JSON.stringify({ 
+          assetId: targetAssetId, 
+          dryRun: false,
+          orgType
+        }),
       });
       const data = (await resp.json()) as CreateRunResponse;
       if (!resp.ok) {
@@ -379,6 +384,49 @@ export default function PipelinePage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Drop zone */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium">Organization Type</label>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className={cn(
+                  "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
+                  orgType === "nhs" ? "bg-primary" : "bg-background"
+                )}>
+                  {orgType === "nhs" && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                </div>
+                <input
+                  type="radio"
+                  name="orgType"
+                  className="sr-only"
+                  checked={orgType === "nhs"}
+                  onChange={() => setOrgType("nhs")}
+                />
+                <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  NHS Organisation
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className={cn(
+                  "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
+                  orgType === "council" ? "bg-primary" : "bg-background"
+                )}>
+                  {orgType === "council" && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                </div>
+                <input
+                  type="radio"
+                  name="orgType"
+                  className="sr-only"
+                  checked={orgType === "council"}
+                  onChange={() => setOrgType("council")}
+                />
+                <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Local Authority (Council)
+                </span>
+              </label>
+            </div>
+          </div>
+
           <div
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -645,6 +693,7 @@ export default function PipelinePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Run</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Filename</TableHead>
                 <TableHead>Asset</TableHead>
                 <TableHead>Status</TableHead>
@@ -653,53 +702,72 @@ export default function PipelinePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {runs.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>
-                    <Link
-                      className="font-medium text-primary hover:underline"
-                      href={`/pipeline/runs/${r.id}`}
-                    >
-                      #{r.id}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="max-w-[300px] truncate">
-                    {r.assetOriginalName || (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                      {r.assetId}
-                    </code>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={r.status} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}
-                  </TableCell>
-                  <TableCell>
-                    {r.status === "failed" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void retryRun(r)}
-                        disabled={retryingRunId === r.id}
-                        className="h-8"
+              {runs.map((r) => {
+                const isMatchSuppliers = r.fromStageId === "matchSuppliers";
+                const isImport = r.fromStageId?.startsWith("import") || !r.fromStageId;
+                const runType = isMatchSuppliers 
+                  ? "Match Suppliers" 
+                  : isImport 
+                  ? "Import Spending" 
+                  : r.fromStageId || "Unknown";
+
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      <Link
+                        className="font-medium text-primary hover:underline"
+                        href={`/pipeline/runs/${r.id}`}
                       >
-                        <RotateCw
-                          className={cn(
-                            "size-4",
-                            retryingRunId === r.id && "animate-spin"
-                          )}
-                        />
-                        <span className="sr-only">Retry</span>
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+                        #{r.id}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-normal">
+                        {runType}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[300px] truncate">
+                      {r.assetOriginalName || (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {r.assetId ? (
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          {r.assetId}
+                        </code>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={r.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {r.createdAt ? new Date(r.createdAt).toLocaleString() : ""}
+                    </TableCell>
+                    <TableCell>
+                      {r.status === "failed" && r.assetId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void retryRun(r)}
+                          disabled={retryingRunId === r.id}
+                          className="h-8"
+                        >
+                          <RotateCw
+                            className={cn(
+                              "size-4",
+                              retryingRunId === r.id && "animate-spin"
+                            )}
+                          />
+                          <span className="sr-only">Retry</span>
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {runs.length === 0 && (
                 <TableRow>
                   <TableCell

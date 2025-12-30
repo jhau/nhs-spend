@@ -44,18 +44,20 @@ export async function GET(
   }
 
   try {
-    // Get organisation details
+    // Get organisation details with entity and NHS organisation info
     const orgRes = await db.execute(sql.raw(`
       SELECT 
         o.id,
-        o.name,
-        o.trust_type,
-        o.ods_code,
-        o.post_code,
-        o.icb_ods_code,
-        o.latitude,
-        o.longitude
+        e.name,
+        e.postal_code as post_code,
+        e.latitude,
+        e.longitude,
+        nhs.org_sub_type as trust_type,
+        nhs.ods_code,
+        nhs.parent_ods_code as icb_ods_code
       FROM organisations o
+      LEFT JOIN entities e ON o.entity_id = e.id
+      LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
       WHERE o.id = ${orgId}
     `));
 
@@ -199,4 +201,3 @@ export async function GET(
     );
   }
 }
-

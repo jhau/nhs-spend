@@ -1,8 +1,10 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { read, utils, type WorkBook } from "xlsx";
 
 import type { DbClient } from "@/db";
 import {
+  entities,
+  nhsOrganisations,
   organisations,
   pipelineAssets,
   pipelineSkippedRows,
@@ -271,13 +273,18 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       if (input.truncateAll) {
         await ctx.log({
           level: "warn",
-          message: "Truncating all spend entries and organisations",
+          message: "Truncating all spend entries, organisations, and related entities",
         });
         await tx.delete(spendEntries);
         await tx.delete(organisations);
+        await tx.delete(nhsOrganisations);
+        // Only delete NHS-type entities (preserve company entities)
+        await tx.delete(entities).where(
+          eq(entities.entityType, "nhs_trust")
+        );
         await ctx.log({
           level: "warn",
-          message: "Truncated all spend entries and organisations",
+          message: "Truncated all spend entries, organisations, and NHS entities",
         });
       } else {
         await ctx.log({
@@ -694,11 +701,27 @@ async function syncTrusts(
     level: "debug",
     message: "Loading existing organisations from database",
   });
-  const existing = await client.select().from(organisations);
+  
+  // Load existing organisations with their linked entities
+  const existing = await client
+    .select({
+      id: organisations.id,
+      entityId: organisations.entityId,
+      entityName: entities.name,
+    })
+    .from(organisations)
+    .leftJoin(entities, eq(organisations.entityId, entities.id));
+  
   const idByKey = new Map<string, number>();
+  const entityIdByOrgId = new Map<number, number | null>();
+  
   for (const row of existing) {
-    idByKey.set(normaliseTrustName(row.name), row.id);
+    if (row.entityName) {
+      idByKey.set(normaliseTrustName(row.entityName), row.id);
+    }
+    entityIdByOrgId.set(row.id, row.entityId);
   }
+  
   await ctx.log({
     level: "debug",
     message: "Loaded existing organisations",
@@ -713,22 +736,61 @@ async function syncTrusts(
     message: "Syncing trusts with metadata",
     meta: { metadataCount: metadataMap.size },
   });
+  
   for (const [key, metadata] of metadataMap) {
-    const payloadForInsert = buildOrganisationInsert(metadata);
-    const payloadForUpdate = buildOrganisationUpdate(metadata);
-    const existingId = idByKey.get(key);
+    const existingOrgId = idByKey.get(key);
 
-    if (existingId) {
-      await client
-        .update(organisations)
-        .set(payloadForUpdate)
-        .where(eq(organisations.id, existingId));
+    if (existingOrgId) {
+      // Update existing - get the entity ID
+      const existingEntityId = entityIdByOrgId.get(existingOrgId);
+      
+      if (existingEntityId) {
+        // Update entity
+        await client
+          .update(entities)
+          .set({
+            name: metadata.name,
+            postalCode: metadata.postCode ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(entities.id, existingEntityId));
+        
+        // Update NHS organisation details
+        await client
+          .update(nhsOrganisations)
+          .set({
+            odsCode: metadata.odsCode ?? "",
+            orgSubType: metadata.trustType ?? null,
+          })
+          .where(eq(nhsOrganisations.entityId, existingEntityId));
+        
+        // Update organisation (buyer metadata)
+        await client
+          .update(organisations)
+          .set({
+            officialWebsite: metadata.officialWebsite ?? null,
+            spendingDataUrl: metadata.spendingDataUrl ?? null,
+            missingDataNote: metadata.missingDataNote ?? null,
+            verifiedVia: metadata.verifiedVia ?? null,
+          })
+          .where(eq(organisations.id, existingOrgId));
+      }
       updated++;
     } else {
+      // Create new entity + NHS org + organisation
+      const entityId = await createNhsTrustEntity(client, metadata);
+      
       const [created] = await client
         .insert(organisations)
-        .values(payloadForInsert)
+        .values({
+          entityId,
+          officialWebsite: metadata.officialWebsite ?? null,
+          spendingDataUrl: metadata.spendingDataUrl ?? null,
+          missingDataNote: metadata.missingDataNote ?? null,
+          verifiedVia: metadata.verifiedVia ?? null,
+        })
         .returning({ id: organisations.id });
+      
       idByKey.set(key, created.id);
       inserted++;
     }
@@ -739,22 +801,25 @@ async function syncTrusts(
     message: "Creating trusts without metadata",
     meta: { discoveredCount: discoveredTrusts.size },
   });
+  
   let createdWithoutMetadata = 0;
   for (const [key, name] of discoveredTrusts) {
     if (idByKey.has(key)) continue;
+    
+    // Create minimal entity + NHS org + organisation
+    const entityId = await createNhsTrustEntity(client, { name });
+    
     const [created] = await client
       .insert(organisations)
       .values({
-        name,
-        trustType: null,
-        odsCode: null,
-        postCode: null,
+        entityId,
         officialWebsite: null,
         spendingDataUrl: null,
         missingDataNote: null,
         verifiedVia: null,
       })
       .returning({ id: organisations.id });
+    
     idByKey.set(key, created.id);
     createdWithoutMetadata++;
   }
@@ -762,31 +827,41 @@ async function syncTrusts(
   return { idByKey, inserted, updated, createdWithoutMetadata };
 }
 
-function buildOrganisationInsert(metadata: TrustMetadata) {
-  return {
-    name: metadata.name,
-    trustType: metadata.trustType ?? null,
-    odsCode: metadata.odsCode ?? null,
-    postCode: metadata.postCode ?? null,
-    officialWebsite: metadata.officialWebsite ?? null,
-    spendingDataUrl: metadata.spendingDataUrl ?? null,
-    missingDataNote: metadata.missingDataNote ?? null,
-    verifiedVia: metadata.verifiedVia ?? null,
-  } satisfies typeof organisations.$inferInsert;
+/**
+ * Creates an entity + NHS organisation record for an NHS Trust.
+ * Returns the entity ID.
+ */
+async function createNhsTrustEntity(
+  client: any,
+  metadata: Partial<TrustMetadata> & { name: string }
+): Promise<number> {
+  // Use ODS code as registry_id if available, otherwise generate a placeholder
+  const registryId = metadata.odsCode || `UNKNOWN_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  
+  // Create entity
+  const [newEntity] = await client
+    .insert(entities)
+    .values({
+      entityType: "nhs_trust",
+      registryId,
+      name: metadata.name,
+      status: "active",
+      postalCode: metadata.postCode ?? null,
+    })
+    .returning({ id: entities.id });
+  
+  // Create NHS organisation details
+  await client.insert(nhsOrganisations).values({
+    entityId: newEntity.id,
+    odsCode: metadata.odsCode ?? registryId,
+    orgType: "trust",
+    orgSubType: metadata.trustType ?? null,
+    isActive: true,
+  });
+  
+  return newEntity.id;
 }
 
-function buildOrganisationUpdate(metadata: TrustMetadata) {
-  return {
-    name: metadata.name,
-    trustType: metadata.trustType ?? null,
-    odsCode: metadata.odsCode ?? null,
-    postCode: metadata.postCode ?? null,
-    officialWebsite: metadata.officialWebsite ?? null,
-    spendingDataUrl: metadata.spendingDataUrl ?? null,
-    missingDataNote: metadata.missingDataNote ?? null,
-    verifiedVia: metadata.verifiedVia ?? null,
-  } satisfies Partial<typeof organisations.$inferInsert>;
-}
 
 async function importSpendSheets(
   client: any,
