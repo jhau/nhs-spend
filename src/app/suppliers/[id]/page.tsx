@@ -33,6 +33,11 @@ interface Transaction {
   buyer: string;
   amount: string;
   payment_date: string;
+  asset_id: number;
+  original_name: string;
+  source_sheet: string;
+  source_row_number: number;
+  run_id: number | null;
 }
 
 interface CompanySearchResult {
@@ -53,6 +58,19 @@ interface LinkedCompany {
   dateOfCreation: string;
   address: string;
   sicCodes: string[] | null;
+}
+
+interface LinkedCouncil {
+  gssCode: string;
+  councilName: string;
+  councilType: string;
+  address: string;
+}
+
+interface Supplier {
+  id: number;
+  name: string;
+  entity_id: number | null;
 }
 
 interface Contract {
@@ -120,11 +138,13 @@ function getDefaultDateRange() {
 
 export default function SupplierPage() {
   const params = useParams();
-  const name = decodeURIComponent(params.name as string);
+  const id = params.id as string;
 
   const [supplierName, setSupplierName] = useState<string>("");
   const [supplierId, setSupplierId] = useState<number | null>(null);
+  const [entityId, setEntityId] = useState<number | null>(null);
   const [linkedCompany, setLinkedCompany] = useState<LinkedCompany | null>(null);
+  const [linkedCouncil, setLinkedCouncil] = useState<LinkedCouncil | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [topBuyers, setTopBuyers] = useState<Buyer[]>([]);
   const [monthlySpend, setMonthlySpend] = useState<MonthlySpend[]>([]);
@@ -137,7 +157,7 @@ export default function SupplierPage() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractsLoading, setContractsLoading] = useState(false);
   const [contractsSearchInfo, setContractsSearchInfo] = useState<{
-    searchMethod: "companies_house" | "keyword";
+    searchMethod: "companies_house" | "council" | "keyword";
     searchKeyword: string;
     companiesHouseNumber: string | null;
   } | null>(null);
@@ -159,7 +179,7 @@ export default function SupplierPage() {
         ...(startDate && { startDate }),
         ...(endDate && { endDate }),
       });
-      const res = await fetch(`/api/suppliers/${encodeURIComponent(name)}?${queryParams}`);
+      const res = await fetch(`/api/suppliers/${id}?${queryParams}`);
       if (!res.ok) {
         if (res.status === 404) {
           setError("Supplier not found");
@@ -171,7 +191,9 @@ export default function SupplierPage() {
       const data = await res.json();
       setSupplierName(data.supplier.name);
       setSupplierId(data.supplier.id);
+      setEntityId(data.supplier.entity_id);
       setLinkedCompany(data.linkedCompany);
+      setLinkedCouncil(data.linkedCouncil);
       setSummary(data.summary);
       setTopBuyers(data.topBuyers);
       setMonthlySpend(data.monthlySpend);
@@ -183,7 +205,7 @@ export default function SupplierPage() {
     } finally {
       setLoading(false);
     }
-  }, [name, currentPage, startDate, endDate]);
+  }, [id, currentPage, startDate, endDate]);
 
   useEffect(() => {
     fetchData();
@@ -194,7 +216,7 @@ export default function SupplierPage() {
     setContractsLoading(true);
     try {
       // API will use Companies House data if available
-      const res = await fetch(`/api/suppliers/${encodeURIComponent(name)}/contracts`);
+      const res = await fetch(`/api/suppliers/${id}/contracts`);
       if (res.ok) {
         const data = await res.json();
         setContracts(data.contracts || []);
@@ -209,7 +231,7 @@ export default function SupplierPage() {
     } finally {
       setContractsLoading(false);
     }
-  }, [name]);
+  }, [id]);
 
   // Fetch contracts when component mounts
   useEffect(() => {
@@ -277,57 +299,93 @@ export default function SupplierPage() {
           ← Back to Buyers
         </Link>
         <h1 style={styles.title}>{supplierName}</h1>
-        {linkedCompany ? (
+        {linkedCouncil ? (
           <div style={styles.meta}>
-            <span style={styles.badge}>
-              <a
-                href={`https://find-and-update.company-information.service.gov.uk/company/${linkedCompany.companyNumber}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={styles.companyLink}
+            {entityId ? (
+              <Link 
+                href={`/entities/${entityId}`}
+                style={{ textDecoration: "none" }}
               >
-                Companies House: {linkedCompany.companyNumber}
-              </a>
-            </span>
-            <span style={{
-              ...styles.badgeStatus,
-              backgroundColor: linkedCompany.companyStatus === "active" ? "#dcfce7" : "#fef3c7",
-              color: linkedCompany.companyStatus === "active" ? "#166534" : "#92400e",
-            }}>
-              {linkedCompany.companyStatus}
-            </span>
-            {linkedCompany.address && (
-              <span style={styles.badge}>{linkedCompany.address}</span>
+                <span style={styles.badgeCouncil}>Verified Council: {linkedCouncil.councilName} →</span>
+              </Link>
+            ) : (
+              <span style={styles.badgeCouncil}>Verified Council: {linkedCouncil.councilName}</span>
             )}
-            {supplierId && (
-              <CompaniesHouseSearch
-                supplierName={supplierName}
-                supplierId={supplierId}
-                onLinked={() => {
-                  fetchData();
-                  fetchContracts();
-                }}
-                buttonText="Change Link"
-                buttonVariant="ghost"
-              />
-            )}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "8px", width: "100%" }}>
+              <span style={styles.badge}>{linkedCouncil.councilType}</span>
+              {linkedCouncil.gssCode && (
+                <span style={styles.badge}>GSS: {linkedCouncil.gssCode}</span>
+              )}
+              {linkedCouncil.address && (
+                <span style={styles.badge}>{linkedCouncil.address}</span>
+              )}
+            </div>
           </div>
         ) : (
-          <div style={styles.meta}>
-            <span style={styles.noLinkText}>No Companies House link</span>
-            {supplierId && (
-              <CompaniesHouseSearch
-                supplierName={supplierName}
-                supplierId={supplierId}
-                onLinked={() => {
-                  fetchData();
-                  fetchContracts();
-                }}
-                buttonText="Search Companies House"
-                buttonVariant="default"
-              />
+          <>
+            {entityId && (
+              <div style={{ marginBottom: "16px" }}>
+                <Link 
+                  href={`/entities/${entityId}`}
+                  style={styles.consolidatedLink}
+                >
+                  View Consolidated Entity View →
+                </Link>
+              </div>
             )}
-          </div>
+            {linkedCompany ? (
+              <div style={styles.meta}>
+                <span style={styles.badge}>
+                  <a
+                    href={`https://find-and-update.company-information.service.gov.uk/company/${linkedCompany.companyNumber}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={styles.companyLink}
+                  >
+                    Companies House: {linkedCompany.companyNumber}
+                  </a>
+                </span>
+                <span style={{
+                  ...styles.badgeStatus,
+                  backgroundColor: linkedCompany.companyStatus === "active" ? "#dcfce7" : "#fef3c7",
+                  color: linkedCompany.companyStatus === "active" ? "#166534" : "#92400e",
+                }}>
+                  {linkedCompany.companyStatus}
+                </span>
+                {linkedCompany.address && (
+                  <span style={styles.badge}>{linkedCompany.address}</span>
+                )}
+                {supplierId && (
+                  <CompaniesHouseSearch
+                    supplierName={supplierName}
+                    supplierId={supplierId}
+                    onLinked={() => {
+                      fetchData();
+                      fetchContracts();
+                    }}
+                    buttonText="Change Link"
+                    buttonVariant="ghost"
+                  />
+                )}
+              </div>
+            ) : (
+              <div style={styles.meta}>
+                <span style={styles.noLinkText}>No Companies House link</span>
+                {supplierId && (
+                  <CompaniesHouseSearch
+                    supplierName={supplierName}
+                    supplierId={supplierId}
+                    onLinked={() => {
+                      fetchData();
+                      fetchContracts();
+                    }}
+                    buttonText="Search Companies House"
+                    buttonVariant="default"
+                  />
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -529,19 +587,20 @@ export default function SupplierPage() {
               <tr>
                 <th style={styles.th}>Date</th>
                 <th style={styles.th}>Buyer</th>
+                <th style={styles.th}>Source File</th>
                 <th style={{ ...styles.th, textAlign: "right" }}>Amount</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={3} style={styles.loadingCell}>
+                  <td colSpan={4} style={styles.loadingCell}>
                     Loading...
                   </td>
                 </tr>
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={3} style={styles.emptyCell}>
+                  <td colSpan={4} style={styles.emptyCell}>
                     No transactions found
                   </td>
                 </tr>
@@ -553,6 +612,28 @@ export default function SupplierPage() {
                       <Link href={`/buyers/${tx.buyer_id}`} style={styles.buyerLink}>
                         {tx.buyer}
                       </Link>
+                    </td>
+                    <td style={styles.td}>
+                      <div style={styles.sourceFileInfo}>
+                        {tx.run_id ? (
+                          <Link
+                            href={`/pipeline/runs/${tx.run_id}`}
+                            style={styles.sourceFileLink}
+                            title="View pipeline run details"
+                          >
+                            {tx.original_name}
+                          </Link>
+                        ) : (
+                          <span style={styles.sourceFileText}>
+                            {tx.original_name}
+                          </span>
+                        )}
+                        <span style={styles.sourceRow}>
+                          Row {tx.source_row_number}
+                          {tx.source_sheet !== "Sheet1" &&
+                            ` (${tx.source_sheet})`}
+                        </span>
+                      </div>
                     </td>
                     <td style={{ ...styles.td, textAlign: "right", fontWeight: 600 }}>
                       £{parseFloat(tx.amount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}
@@ -630,6 +711,13 @@ export default function SupplierPage() {
                       ({contractsSearchInfo.companiesHouseNumber})
                     </span>
                   )}
+                </span>
+              </>
+            ) : contractsSearchInfo.searchMethod === "council" ? (
+              <>
+                <span style={styles.searchMethodIcon}>✓</span>
+                <span>
+                  Searching by Council name: <strong>{contractsSearchInfo.searchKeyword}</strong>
                 </span>
               </>
             ) : (
@@ -842,6 +930,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#1a1a2e",
     margin: "0 0 12px 0",
   },
+  consolidatedLink: {
+    display: "inline-block",
+    fontSize: "14px",
+    fontWeight: 500,
+    color: "#2563eb",
+    textDecoration: "none",
+    padding: "6px 12px",
+    backgroundColor: "#eff6ff",
+    borderRadius: "6px",
+    border: "1px solid #dbeafe",
+  },
   meta: {
     display: "flex",
     gap: "8px",
@@ -855,6 +954,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: "#f0f0f0",
     borderRadius: "4px",
     color: "#666",
+  },
+  badgeCouncil: {
+    display: "inline-block",
+    padding: "8px 16px",
+    fontSize: "16px",
+    fontWeight: 700,
+    backgroundColor: "#e0f2fe",
+    borderRadius: "8px",
+    color: "#0369a1",
+    border: "2px solid #7dd3fc",
+    marginBottom: "8px",
   },
   badgeStatus: {
     display: "inline-block",
@@ -1011,6 +1121,34 @@ const styles: { [key: string]: React.CSSProperties } = {
   buyerLink: {
     color: "#5c4d3c",
     textDecoration: "none",
+  },
+  sourceFileInfo: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+  },
+  sourceFileLink: {
+    fontSize: "12px",
+    color: "#2563eb",
+    textDecoration: "none",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    maxWidth: "200px",
+    display: "block",
+  },
+  sourceFileText: {
+    fontSize: "12px",
+    color: "#666",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    maxWidth: "200px",
+    display: "block",
+  },
+  sourceRow: {
+    fontSize: "11px",
+    color: "#999",
   },
   topTxList: {
     display: "flex",

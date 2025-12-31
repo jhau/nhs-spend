@@ -86,14 +86,16 @@ export async function GET(
     // Get top suppliers
     const topSuppliersRes = await db.execute(sql.raw(`
       SELECT 
-        se.supplier,
+        s.id as supplier_id,
+        s.name as supplier,
         SUM(se.amount) as total_spend,
         COUNT(*) as transaction_count
       FROM spend_entries se
+      JOIN suppliers s ON s.id = se.supplier_id
       WHERE se.organisation_id = ${orgId}
       ${dateFilter}
       ${supplierFilter}
-      GROUP BY se.supplier
+      GROUP BY s.id, s.name
       ORDER BY total_spend DESC
       LIMIT 10
     `));
@@ -117,10 +119,12 @@ export async function GET(
     const topTransactionsRes = await db.execute(sql.raw(`
       SELECT 
         se.id,
-        se.supplier,
+        s.id as supplier_id,
+        s.name as supplier,
         se.amount,
         se.payment_date
       FROM spend_entries se
+      JOIN suppliers s ON s.id = se.supplier_id
       WHERE se.organisation_id = ${orgId}
       ${dateFilter}
       ${supplierFilter}
@@ -132,10 +136,12 @@ export async function GET(
     const transactionsRes = await db.execute(sql.raw(`
       SELECT 
         se.id,
-        se.supplier,
+        s.id as supplier_id,
+        s.name as supplier,
         se.amount,
         se.payment_date
       FROM spend_entries se
+      JOIN suppliers s ON s.id = se.supplier_id
       WHERE se.organisation_id = ${orgId}
       ${dateFilter}
       ${supplierFilter}
@@ -175,6 +181,7 @@ export async function GET(
         latestDate: summary.latest_date,
       },
       topSuppliers: (topSuppliersRes.rows as any[]).map((s) => ({
+        id: s.supplier_id,
         name: s.supplier,
         totalSpend: parseFloat(s.total_spend) || 0,
         transactionCount: parseInt(s.transaction_count) || 0,

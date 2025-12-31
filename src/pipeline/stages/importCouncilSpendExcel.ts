@@ -21,6 +21,7 @@ import type {
 import {
   searchCouncilMetadata,
   getLocalCouncils,
+  lookupCouncilByGssCode,
   type CouncilMetadata,
 } from "@/lib/council-api";
 
@@ -467,6 +468,85 @@ async function gatherNames(
   return { discoveredCouncils, discoveredSuppliers };
 }
 
+/**
+ * Helper to create or get a council entity by GSS code.
+ * Used for creating parent councils that may not be in the discovered list.
+ */
+async function getOrCreateCouncilByGssCode(
+  client: any,
+  gssCode: string,
+  entityIdByGssCode: Map<string, number>,
+  ctx: PipelineContext
+): Promise<number | null> {
+  // Check if already exists
+  if (entityIdByGssCode.has(gssCode)) {
+    return entityIdByGssCode.get(gssCode)!;
+  }
+
+  // Look up the council metadata from the API
+  const metadata = await lookupCouncilByGssCode(gssCode);
+  if (!metadata) {
+    await ctx.log({
+      level: "warn",
+      message: `Could not find parent council with GSS code: ${gssCode}`,
+    });
+    return null;
+  }
+
+  await ctx.log({
+    level: "info",
+    message: `Creating parent council: ${metadata.officialName} (${gssCode})`,
+  });
+
+  // Create the entity
+  const [newEntity] = await client
+    .insert(entities)
+    .values({
+      entityType: "council",
+      registryId: gssCode,
+      name: metadata.officialName,
+      status: "active",
+      latitude: metadata.latitude ?? null,
+      longitude: metadata.longitude ?? null,
+    })
+    .returning({ id: entities.id });
+
+  // Recursively resolve the parent's parent if it has one
+  let parentEntityId: number | null = null;
+  if (metadata.parentGssCode) {
+    parentEntityId = await getOrCreateCouncilByGssCode(
+      client,
+      metadata.parentGssCode,
+      entityIdByGssCode,
+      ctx
+    );
+  }
+
+  // Create the council record
+  await client.insert(councils).values({
+    entityId: newEntity.id,
+    gssCode: metadata.gssCode || null,
+    onsCode: metadata.onsCode || null,
+    councilType: metadata.councilType || "unknown",
+    tier: metadata.tier || null,
+    homepageUrl: metadata.homepageUrl || null,
+    region: metadata.region || null,
+    nation: metadata.nation || null,
+    parentEntityId,
+  });
+
+  // Create the organisation record
+  await client.insert(organisations).values({
+    entityId: newEntity.id,
+    officialWebsite: metadata.homepageUrl || null,
+  });
+
+  // Cache the entity ID
+  entityIdByGssCode.set(gssCode, newEntity.id);
+
+  return newEntity.id;
+}
+
 async function syncCouncils(
   client: any,
   discoveredCouncils: Map<string, string>,
@@ -502,6 +582,8 @@ async function syncCouncils(
 
   const idByKey = new Map<string, number>();
   const idByGssCode = new Map<string, number>();
+  // Map GSS code to entity ID (for parent lookups)
+  const entityIdByGssCode = new Map<string, number>();
 
   for (const row of existing) {
     if (row.entityName) {
@@ -510,6 +592,7 @@ async function syncCouncils(
     // Also index by GSS code and registry_id for duplicate detection
     if (row.gssCode) {
       idByGssCode.set(row.gssCode, row.id);
+      entityIdByGssCode.set(row.gssCode, row.entityId);
       // Also add the official CSV name to the lookup
       const officialName = officialNameByGss.get(row.gssCode);
       if (officialName) {
@@ -518,6 +601,7 @@ async function syncCouncils(
     }
     if (row.registryId) {
       idByGssCode.set(row.registryId, row.id);
+      entityIdByGssCode.set(row.registryId, row.entityId);
       // Also add the official CSV name for registry_id (which is often GSS code)
       const officialName = officialNameByGss.get(row.registryId);
       if (officialName) {
@@ -536,6 +620,7 @@ async function syncCouncils(
   let updated = 0;
   let createdWithoutMetadata = 0;
   let skippedExisting = 0;
+  let parentsCreated = 0;
 
   for (const [key, name] of discoveredCouncils) {
     const existingOrgId = idByKey.get(key);
@@ -575,10 +660,30 @@ async function syncCouncils(
       continue;
     }
 
+    // Resolve parent council if one exists
+    let parentEntityId: number | null = null;
+    if (metadata.parentGssCode) {
+      const existingParentCount = entityIdByGssCode.size;
+      parentEntityId = await getOrCreateCouncilByGssCode(
+        client,
+        metadata.parentGssCode,
+        entityIdByGssCode,
+        ctx
+      );
+      // Count how many parent councils were created
+      parentsCreated += entityIdByGssCode.size - existingParentCount;
+    }
+
     // Create new council
     await ctx.log({
       level: "info",
       message: `Creating new council: ${name}`,
+      meta: {
+        gssCode: metadata.gssCode,
+        councilType: metadata.councilType,
+        tier: metadata.tier,
+        parentGssCode: metadata.parentGssCode,
+      },
     });
 
     const registryId =
@@ -606,6 +711,7 @@ async function syncCouncils(
       homepageUrl: metadata.homepageUrl || null,
       region: metadata.region || null,
       nation: metadata.nation || null,
+      parentEntityId,
     });
 
     const [created] = await client
@@ -623,6 +729,7 @@ async function syncCouncils(
     }
     if (metadata.gssCode) {
       idByGssCode.set(metadata.gssCode, created.id);
+      entityIdByGssCode.set(metadata.gssCode, newEntity.id);
     }
     inserted++;
   }
@@ -630,7 +737,7 @@ async function syncCouncils(
   await ctx.log({
     level: "debug",
     message: "Council sync summary",
-    meta: { skippedExisting, inserted },
+    meta: { skippedExisting, inserted, parentsCreated },
   });
 
   return { idByKey, inserted, updated, createdWithoutMetadata };

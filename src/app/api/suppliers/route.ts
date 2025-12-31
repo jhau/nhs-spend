@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { suppliers, entities, companies, spendEntries } from "@/db/schema";
-import { eq, sql, desc, count } from "drizzle-orm";
+import { eq, sql, desc, count, ilike, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
@@ -10,6 +10,7 @@ export async function GET(req: Request) {
   const sort = searchParams.get("sort") || "totalSpend";
   const order = searchParams.get("order") || "desc";
   const status = searchParams.get("status");
+  const search = searchParams.get("search");
 
   try {
     // We want to list suppliers with their total spend and transaction count
@@ -39,11 +40,19 @@ export async function GET(req: Request) {
       .from(suppliers)
       .leftJoin(entities, eq(suppliers.entityId, entities.id))
       .leftJoin(companies, eq(entities.id, companies.entityId))
-      .leftJoin(statsQuery, eq(suppliers.id, statsQuery.supplierId));
+      .leftJoin(statsQuery, eq(suppliers.id, statsQuery.supplierId))
+      .$dynamic();
 
+    const filters = [];
     if (status) {
-      // @ts-ignore - drizzle orm typing can be tricky with dynamic queries
-      query = query.where(eq(suppliers.matchStatus, status));
+      filters.push(eq(suppliers.matchStatus, status));
+    }
+    if (search) {
+      filters.push(ilike(suppliers.name, `%${search}%`));
+    }
+
+    if (filters.length > 0) {
+      query = query.where(and(...filters));
     }
 
     const rows = await query
@@ -51,19 +60,38 @@ export async function GET(req: Request) {
       .limit(limit)
       .offset(offset);
 
-    const totalCountResult = await db.select({ count: count() }).from(suppliers);
+    const countFilters = [];
+    if (search) {
+      countFilters.push(ilike(suppliers.name, `%${search}%`));
+    }
+
+    let totalCountQuery = db.select({ count: count() }).from(suppliers).$dynamic();
+    if (countFilters.length > 0) {
+      totalCountQuery = totalCountQuery.where(and(...countFilters));
+    }
+    const totalCountResult = await totalCountQuery;
     const totalCount = totalCountResult[0]?.count || 0;
 
-    const matchedCountResult = await db
+    let matchedCountQuery = db
       .select({ count: count() })
       .from(suppliers)
-      .where(eq(suppliers.matchStatus, "matched"));
+      .where(eq(suppliers.matchStatus, "matched"))
+      .$dynamic();
+    if (search) {
+      matchedCountQuery = matchedCountQuery.where(and(eq(suppliers.matchStatus, "matched"), ilike(suppliers.name, `%${search}%`)));
+    }
+    const matchedCountResult = await matchedCountQuery;
     const matchedCount = matchedCountResult[0]?.count || 0;
 
-    const pendingCountResult = await db
+    let pendingCountQuery = db
       .select({ count: count() })
       .from(suppliers)
-      .where(eq(suppliers.matchStatus, "pending"));
+      .where(eq(suppliers.matchStatus, "pending"))
+      .$dynamic();
+    if (search) {
+      pendingCountQuery = pendingCountQuery.where(and(eq(suppliers.matchStatus, "pending"), ilike(suppliers.name, `%${search}%`)));
+    }
+    const pendingCountResult = await pendingCountQuery;
     const pendingCount = pendingCountResult[0]?.count || 0;
 
     return NextResponse.json({ 

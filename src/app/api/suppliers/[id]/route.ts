@@ -4,10 +4,14 @@ import { NextResponse } from "next/server";
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ name: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { name } = await params;
-  const supplierName = decodeURIComponent(name);
+  const { id } = await params;
+  const supplierId = parseInt(id);
+
+  if (isNaN(supplierId)) {
+    return NextResponse.json({ error: "Invalid supplier ID" }, { status: 400 });
+  }
 
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get("startDate") || "";
@@ -24,8 +28,8 @@ export async function GET(
   try {
     // Get supplier ID and company link
     const supplierRes = await db.execute(sql.raw(`
-      SELECT id, name, company_id FROM suppliers 
-      WHERE name = '${supplierName.replace(/'/g, "''")}'
+      SELECT id, name, entity_id FROM suppliers 
+      WHERE id = ${supplierId}
     `));
 
     const supplier = supplierRes.rows[0] as any;
@@ -33,8 +37,6 @@ export async function GET(
     if (!supplier) {
       return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
     }
-
-    const supplierId = supplier.id;
 
     // Get summary stats for this supplier
     const summaryRes = await db.execute(sql.raw(`
@@ -60,15 +62,17 @@ export async function GET(
     const topBuyersRes = await db.execute(sql.raw(`
       SELECT 
         o.id,
-        o.name,
-        o.trust_type,
+        e.name,
+        nhs.org_sub_type as trust_type,
         SUM(se.amount) as total_spend,
         COUNT(*) as transaction_count
       FROM spend_entries se
       JOIN organisations o ON o.id = se.organisation_id
+      JOIN entities e ON e.id = o.entity_id
+      LEFT JOIN nhs_organisations nhs ON nhs.entity_id = e.id
       WHERE se.supplier_id = ${supplierId}
       ${dateFilter}
-      GROUP BY o.id, o.name, o.trust_type
+      GROUP BY o.id, e.name, nhs.org_sub_type
       ORDER BY total_spend DESC
       LIMIT 10
     `));
@@ -92,11 +96,18 @@ export async function GET(
       SELECT 
         se.id,
         o.id as buyer_id,
-        o.name as buyer,
+        e.name as buyer,
         se.amount,
-        se.payment_date
+        se.payment_date,
+        se.asset_id,
+        se.source_sheet,
+        se.source_row_number,
+        pa.original_name,
+        (SELECT pr.id FROM pipeline_runs pr WHERE pr.asset_id = se.asset_id AND pr.status = 'succeeded' ORDER BY pr.finished_at DESC LIMIT 1) as run_id
       FROM spend_entries se
       JOIN organisations o ON o.id = se.organisation_id
+      JOIN entities e ON e.id = o.entity_id
+      JOIN pipeline_assets pa ON pa.id = se.asset_id
       WHERE se.supplier_id = ${supplierId}
       ${dateFilter}
       ORDER BY se.amount DESC
@@ -108,11 +119,18 @@ export async function GET(
       SELECT 
         se.id,
         o.id as buyer_id,
-        o.name as buyer,
+        e.name as buyer,
         se.amount,
-        se.payment_date
+        se.payment_date,
+        se.asset_id,
+        se.source_sheet,
+        se.source_row_number,
+        pa.original_name,
+        (SELECT pr.id FROM pipeline_runs pr WHERE pr.asset_id = se.asset_id AND pr.status = 'succeeded' ORDER BY pr.finished_at DESC LIMIT 1) as run_id
       FROM spend_entries se
       JOIN organisations o ON o.id = se.organisation_id
+      JOIN entities e ON e.id = o.entity_id
+      JOIN pipeline_assets pa ON pa.id = se.asset_id
       WHERE se.supplier_id = ${supplierId}
       ${dateFilter}
       ORDER BY se.payment_date DESC, se.amount DESC
@@ -129,30 +147,55 @@ export async function GET(
 
     const totalCount = parseInt((countRes.rows[0] as any).count) || 0;
 
-    // Check if there's a linked company
+    // Check if there's a linked entity (company or council)
     let linkedCompany = null;
-    if (supplier.company_id) {
-      const companyRes = await db.execute(sql.raw(`
-        SELECT 
-          company_number,
-          company_name,
-          company_status,
-          company_type,
-          date_of_creation,
-          address_line_1,
-          locality,
-          postal_code,
-          sic_codes
-        FROM companies
-        WHERE id = ${supplier.company_id}
+    let linkedCouncil = null;
+    
+    if (supplier.entity_id) {
+      const entityRes = await db.execute(sql.raw(`
+        SELECT id, entity_type, name FROM entities WHERE id = ${supplier.entity_id}
       `));
-      linkedCompany = companyRes.rows[0];
+      const entity = entityRes.rows[0] as any;
+
+      if (entity?.entity_type === "company") {
+        const companyRes = await db.execute(sql.raw(`
+          SELECT 
+            c.company_number,
+            e.name as company_name,
+            c.company_status,
+            c.company_type,
+            c.date_of_creation,
+            e.address_line_1,
+            e.locality,
+            e.postal_code,
+            c.sic_codes
+          FROM companies c
+          JOIN entities e ON e.id = c.entity_id
+          WHERE c.entity_id = ${supplier.entity_id}
+        `));
+        linkedCompany = companyRes.rows[0];
+      } else if (entity?.entity_type === "council") {
+        const councilRes = await db.execute(sql.raw(`
+          SELECT 
+            co.gss_code,
+            e.name as council_name,
+            co.council_type,
+            e.address_line_1,
+            e.locality,
+            e.postal_code
+          FROM councils co
+          JOIN entities e ON e.id = co.entity_id
+          WHERE co.entity_id = ${supplier.entity_id}
+        `));
+        linkedCouncil = councilRes.rows[0];
+      }
     }
 
     return NextResponse.json({
       supplier: {
         name: supplier.name,
         id: supplier.id,
+        entity_id: supplier.entity_id,
       },
       linkedCompany: linkedCompany ? {
         companyNumber: (linkedCompany as any).company_number,
@@ -166,6 +209,16 @@ export async function GET(
           (linkedCompany as any).postal_code,
         ].filter(Boolean).join(", "),
         sicCodes: (linkedCompany as any).sic_codes,
+      } : null,
+      linkedCouncil: linkedCouncil ? {
+        gssCode: (linkedCouncil as any).gss_code,
+        councilName: (linkedCouncil as any).council_name,
+        councilType: (linkedCouncil as any).council_type,
+        address: [
+          (linkedCouncil as any).address_line_1,
+          (linkedCouncil as any).locality,
+          (linkedCouncil as any).postal_code,
+        ].filter(Boolean).join(", "),
       } : null,
       summary: {
         totalSpend: parseFloat(summary.total_spend) || 0,

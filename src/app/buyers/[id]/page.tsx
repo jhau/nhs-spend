@@ -24,6 +24,7 @@ interface Summary {
 }
 
 interface Supplier {
+  id: number;
   name: string;
   totalSpend: number;
   transactionCount: number;
@@ -416,7 +417,7 @@ export default function OrganisationPage() {
                       {formatCurrency(supplier.totalSpend)}
                     </div>
                     <Link
-                      href={`/suppliers/${encodeURIComponent(supplier.name)}`}
+                      href={`/suppliers/${supplier.id}`}
                       style={styles.supplierLink}
                       title="View supplier page"
                     >

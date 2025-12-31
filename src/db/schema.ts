@@ -140,12 +140,17 @@ export const councils = pgTable(
       .references(() => entities.id, { onDelete: "cascade" }),
     gssCode: text("gss_code"), // Government Statistical Service code (E09000001 etc.)
     onsCode: text("ons_code"), // ONS code if different
-    councilType: text("council_type").notNull(), // 'county' | 'district' | 'unitary' | 'metropolitan' | 'london_borough' | 'combined_authority'
-    tier: text("tier"), // 'tier1' (county), 'tier2' (district), 'unitary' etc.
+    councilType: text("council_type").notNull(), // 'county' | 'district' | 'unitary' | 'metropolitan' | 'london_borough' | 'combined_authority' | 'parish' | 'town'
+    tier: text("tier"), // 'tier1' (county), 'tier2' (district), 'tier3' (parish/town), 'unitary' etc.
     homepageUrl: text("homepage_url"),
     region: text("region"),
     nation: text("nation"), // 'england' | 'wales' | 'scotland' | 'northern_ireland'
     population: integer("population"),
+
+    // Hierarchy: parent council (e.g., parish -> LAD, LAD -> county)
+    parentEntityId: integer("parent_entity_id").references(() => entities.id, {
+      onDelete: "set null",
+    }),
 
     // Cache metadata
     rawData: jsonb("raw_data"),
@@ -154,6 +159,9 @@ export const councils = pgTable(
   (council) => ({
     gssCodeIdx: uniqueIndex("councils_gss_code_unique").on(council.gssCode),
     councilTypeIdx: index("councils_type_idx").on(council.councilType),
+    parentEntityIdx: index("councils_parent_entity_idx").on(
+      council.parentEntityId
+    ),
   })
 );
 

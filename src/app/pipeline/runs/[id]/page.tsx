@@ -482,7 +482,7 @@ function SuppliersTable({
               <TableRow key={s.id}>
                 <TableCell className="font-medium w-[300px] max-w-[300px] break-words whitespace-normal leading-tight">
                   <Link
-                    href={`/suppliers/${encodeURIComponent(s.name)}`}
+                    href={`/suppliers/${s.id}`}
                     className="text-primary hover:underline"
                   >
                     {s.name}
@@ -788,13 +788,25 @@ export default function PipelineRunPage({
                 </Badge>
               )}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="flex items-center gap-2">
               {data.asset?.originalName && (
-                <span className="font-medium">{data.asset.originalName}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-foreground">
+                    {data.asset.originalName}
+                  </span>
+                  <Button variant="outline" size="sm" asChild className="h-7 px-2">
+                    <a
+                      href={`/api/pipeline/assets/${data.asset.id}/download`}
+                      title="Download original file"
+                    >
+                      <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
+                      Download
+                    </a>
+                  </Button>
+                </div>
               )}
               {data.asset?.sizeBytes && (
                 <span className="text-muted-foreground">
-                  {" "}
                   • {formatBytes(data.asset.sizeBytes)}
                 </span>
               )}

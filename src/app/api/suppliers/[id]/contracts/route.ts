@@ -290,35 +290,61 @@ function reorderSuppliersToPutCurrentFirst(
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ name: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { name } = await params;
-  const supplierName = decodeURIComponent(name);
+  const { id } = await params;
+  const supplierId = parseInt(id);
+
+  if (isNaN(supplierId)) {
+    return NextResponse.json({ error: "Invalid supplier ID" }, { status: 400 });
+  }
 
   try {
-    // Check if there's a linked company with Companies House number
-    const companyLinkRes = await db.execute(
+    // Get supplier name and linked company/council
+    const supplierRes = await db.execute(
       sql.raw(`
         SELECT 
+          s.name as supplier_name,
           c.company_number,
-          c.company_name
+          e.name as entity_name,
+          e.entity_type
         FROM suppliers s
-        JOIN companies c ON c.id = s.company_id
-        WHERE s.name = '${supplierName.replace(/'/g, "''")}'
+        LEFT JOIN companies c ON c.entity_id = s.entity_id
+        LEFT JOIN entities e ON e.id = s.entity_id
+        WHERE s.id = ${supplierId}
         LIMIT 1
       `)
     );
 
-    const linkedCompany = companyLinkRes.rows[0] as
-      | { company_number: string; company_name: string }
+    const supplierData = supplierRes.rows[0] as
+      | { 
+          supplier_name: string; 
+          company_number: string | null; 
+          entity_name: string | null;
+          entity_type: string | null;
+        }
       | undefined;
 
-    let searchKeyword: string;
-    let searchMethod: "companies_house" | "keyword";
+    if (!supplierData) {
+      return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+    }
 
-    if (linkedCompany?.company_number) {
-      searchKeyword = linkedCompany.company_name;
+    const { 
+      supplier_name: supplierName, 
+      company_number: companyNumber, 
+      entity_name: entityName,
+      entity_type: entityType
+    } = supplierData;
+
+    let searchKeyword: string;
+    let searchMethod: "companies_house" | "council" | "keyword";
+
+    if (entityType === "company" && companyNumber && entityName) {
+      searchKeyword = entityName;
       searchMethod = "companies_house";
+    } else if (entityType === "council" && entityName) {
+      searchKeyword = entityName;
+      searchMethod = "council";
     } else {
       searchKeyword = supplierName;
       searchMethod = "keyword";
@@ -375,7 +401,7 @@ export async function GET(
         totalMatching: cachedContracts.length,
         searchMethod,
         searchKeyword,
-        companiesHouseNumber: linkedCompany?.company_number || null,
+        companiesHouseNumber: companyNumber,
         cached: true,
       });
     }
@@ -391,7 +417,7 @@ export async function GET(
       supplierName,
       searchKeyword,
       searchMethod,
-      companiesHouseNumber: linkedCompany?.company_number || null,
+      companiesHouseNumber: companyNumber,
       timestamp: new Date().toISOString(),
     });
 
@@ -485,7 +511,7 @@ export async function GET(
       totalMatching: matchingContracts.length,
       searchMethod,
       searchKeyword,
-      companiesHouseNumber: linkedCompany?.company_number || null,
+      companiesHouseNumber: companyNumber,
       cached: false,
     });
   } catch (error) {

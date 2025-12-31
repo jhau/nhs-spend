@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { suppliers, entities } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, ilike, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import stringSimilarity from "string-similarity";
 
@@ -27,9 +27,10 @@ export async function GET(req: Request) {
   const status = searchParams.get("status") || "pending";
   const limit = Math.min(100, parseInt(searchParams.get("limit") || "20"));
   const offset = parseInt(searchParams.get("offset") || "0");
+  const search = searchParams.get("search");
 
   try {
-    const rows = await db
+    let query = db
       .select({
         id: suppliers.id,
         name: suppliers.name,
@@ -38,9 +39,14 @@ export async function GET(req: Request) {
         entityId: suppliers.entityId,
       })
       .from(suppliers)
-      .where(eq(suppliers.matchStatus, status))
-      .limit(limit)
-      .offset(offset);
+      .$dynamic();
+
+    const filters = [eq(suppliers.matchStatus, status)];
+    if (search) {
+      filters.push(ilike(suppliers.name, `%${search}%`));
+    }
+
+    const rows = await query.where(and(...filters)).limit(limit).offset(offset);
 
     // For each supplier, if pending, we can try a quick search to provide "suggestions"
     // However, doing this in a loop here would be slow and hit rate limits.
