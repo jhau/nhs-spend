@@ -1,5 +1,5 @@
 import { eq, and, isNull, inArray } from "drizzle-orm";
-import { entities, companies, suppliers, councils } from "@/db/schema";
+import { entities, companies, suppliers, councils, governmentDepartments } from "@/db/schema";
 import type { PipelineStage } from "../types";
 import {
   calculateSimilarity,
@@ -8,7 +8,12 @@ import {
   sleep,
 } from "@/lib/companies-house";
 import { searchCouncilMetadata } from "@/lib/council-api";
-import { findOrCreateCompanyEntity, findOrCreateCouncilEntity } from "@/lib/matching-helpers";
+import { searchGovUkOrganisation } from "@/lib/gov-uk";
+import {
+  findOrCreateCompanyEntity,
+  findOrCreateCouncilEntity,
+  findOrCreateGovDepartmentEntity,
+} from "@/lib/matching-helpers";
 
 export type MatchSuppliersInput = {
   /**
@@ -117,6 +122,12 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
 
         // Check for councils first if name contains "council"
         if (supplier.name.toLowerCase().includes("council")) {
+          await ctx.log({
+            level: "debug",
+            message: `Supplier name contains 'council', attempting specialized council lookup: ${supplier.name}`,
+            meta: { supplierId: supplier.id },
+          });
+
           const councilMetadata = await searchCouncilMetadata(supplier.name);
           if (councilMetadata) {
             const entityId = await findOrCreateCouncilEntity(
@@ -166,6 +177,53 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
               meta: { supplierId: supplier.id },
             });
             skippedCount++;
+            continue;
+          }
+        }
+
+        // Check for government departments
+        const govKeywords = [
+          "department",
+          "ministry",
+          "office",
+          "agency",
+          "authority",
+          "government",
+        ];
+        if (
+          govKeywords.some((keyword) =>
+            supplier.name.toLowerCase().includes(keyword)
+          )
+        ) {
+          const govDept = await searchGovUkOrganisation(supplier.name, ctx.log);
+          if (govDept) {
+            const entityId = await findOrCreateGovDepartmentEntity(
+              ctx.db,
+              govDept
+            );
+
+            await ctx.db
+              .update(suppliers)
+              .set({
+                entityId,
+                matchStatus: "matched",
+                matchConfidence: "1.00",
+                manuallyVerified: false,
+                matchAttemptedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(suppliers.id, supplier.id));
+
+            await ctx.log({
+              level: "info",
+              message: `Gov department auto-matched: ${supplier.name} -> ${govDept.title}`,
+              meta: {
+                supplierId: supplier.id,
+                slug: govDept.slug,
+                entityId,
+              },
+            });
+            matchedCount++;
             continue;
           }
         }

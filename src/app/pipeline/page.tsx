@@ -75,7 +75,9 @@ function formatFileSize(bytes: number) {
 export default function PipelinePage() {
   const [file, setFile] = useState<File | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
-  const [orgType, setOrgType] = useState<"nhs" | "council">("nhs");
+  const [orgType, setOrgType] = useState<
+    "nhs" | "council" | "government_department"
+  >("nhs");
   const [uploading, setUploading] = useState(false);
   const [running, setRunning] = useState(false);
   const [runId, setRunId] = useState<number | null>(null);
@@ -422,6 +424,31 @@ export default function PipelinePage() {
                 />
                 <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                   Local Authority (Council)
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div
+                  className={cn(
+                    "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
+                    orgType === "government_department"
+                      ? "bg-primary"
+                      : "bg-background"
+                  )}
+                >
+                  {orgType === "government_department" && (
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
+                  )}
+                </div>
+                <input
+                  type="radio"
+                  name="orgType"
+                  className="sr-only"
+                  checked={orgType === "government_department"}
+                  onChange={() => setOrgType("government_department")}
+                />
+                <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Government Department
                 </span>
               </label>
             </div>

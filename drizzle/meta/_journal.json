@@ -29,6 +29,13 @@
       "when": 1767146755399,
       "tag": "0003_dark_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1767166087228,
+      "tag": "0004_chilly_fenris",
+      "breakpoints": true
     }
   ]
 }

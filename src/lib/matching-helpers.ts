@@ -1,5 +1,6 @@
-import { entities, companies, councils } from "@/db/schema";
+import { entities, companies, councils, governmentDepartments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import type { GovUkOrganisation } from "./gov-uk";
 
 /**
  * Helper to find or create an entity and company record from a Companies House profile.
@@ -103,6 +104,57 @@ export async function findOrCreateCouncilEntity(
     nation: metadata.nation,
     population: metadata.population,
     rawData: metadata,
+    fetchedAt: new Date(),
+  });
+
+  return newEntity.id;
+}
+
+/**
+ * Helper to find or create an entity and government department record from a GOV.UK organisation profile.
+ * Returns the entity ID.
+ */
+export async function findOrCreateGovDepartmentEntity(
+  db: any,
+  profile: GovUkOrganisation
+): Promise<number> {
+  // Check if entity already exists by slug (used as registry_id for gov depts)
+  const existingEntity = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.entityType, "government_department"),
+        eq(entities.registryId, profile.slug)
+      )
+    )
+    .limit(1);
+
+  if (existingEntity.length > 0) {
+    return existingEntity[0].id;
+  }
+
+  // Create entity
+  const [newEntity] = await db
+    .insert(entities)
+    .values({
+      entityType: "government_department",
+      registryId: profile.slug,
+      name: profile.title,
+      status: profile.organisation_state === "live" ? "active" : "inactive",
+    })
+    .returning({ id: entities.id });
+
+  // Create government department details
+  await db.insert(governmentDepartments).values({
+    entityId: newEntity.id,
+    slug: profile.slug,
+    acronym: profile.acronym || null,
+    organisationType: profile.organisation_type,
+    organisationState: profile.organisation_state,
+    link: profile.link,
+    logoUrl: profile.logo_url || null,
+    rawData: profile,
     fetchedAt: new Date(),
   });
 

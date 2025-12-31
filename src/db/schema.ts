@@ -165,6 +165,32 @@ export const councils = pgTable(
   })
 );
 
+/**
+ * Government Departments (from GOV.UK API)
+ */
+export const governmentDepartments = pgTable(
+  "government_departments",
+  {
+    entityId: integer("entity_id")
+      .primaryKey()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    acronym: text("acronym"),
+    organisationType: text("organisation_type"), // ministerial_department, non_ministerial_department, executive_agency, etc.
+    organisationState: text("organisation_state"), // live, closed
+    link: text("link"),
+    logoUrl: text("logo_url"),
+
+    // Cache metadata
+    rawData: jsonb("raw_data"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+  },
+  (dept) => ({
+    slugIdx: uniqueIndex("government_departments_slug_unique").on(dept.slug),
+    typeIdx: index("government_departments_type_idx").on(dept.organisationType),
+  })
+);
+
 // =============================================================================
 // Suppliers
 // =============================================================================
@@ -480,6 +506,8 @@ export type NhsOrganisation = typeof nhsOrganisations.$inferSelect;
 export type NewNhsOrganisation = typeof nhsOrganisations.$inferInsert;
 export type Council = typeof councils.$inferSelect;
 export type NewCouncil = typeof councils.$inferInsert;
+export type GovernmentDepartment = typeof governmentDepartments.$inferSelect;
+export type NewGovernmentDepartment = typeof governmentDepartments.$inferInsert;
 export type Organisation = typeof organisations.$inferSelect;
 export type NewOrganisation = typeof organisations.$inferInsert;
 export type SpendEntry = typeof spendEntries.$inferSelect;

@@ -8,7 +8,12 @@ import {
   setRunStageStatus,
 } from "./pipelineDb";
 import { createPipelineLogger } from "./logger";
-import { importSpendExcelStage, importCouncilSpendExcelStage, matchSuppliersStage } from "./stages";
+import {
+  importSpendExcelStage,
+  importCouncilSpendExcelStage,
+  importGovDeptSpendExcelStage,
+  matchSuppliersStage,
+} from "./stages";
 
 const queue: number[] = [];
 let isProcessing = false;
@@ -54,10 +59,13 @@ async function runOne(runId: number) {
     finishedAt: null,
   });
 
-  const importStage = run.orgType === "council" 
-    ? importCouncilSpendExcelStage 
-    : importSpendExcelStage;
-  
+  const importStage =
+    run.orgType === "council"
+      ? importCouncilSpendExcelStage
+      : run.orgType === "government_department"
+      ? importGovDeptSpendExcelStage
+      : importSpendExcelStage;
+
   const stages = [importStage, matchSuppliersStage];
 
   await logger.log({

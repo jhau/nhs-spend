@@ -167,6 +167,15 @@ function lookupLocalGeography(name: string) {
     };
   }
 
+  console.info(
+    `[lookupLocalGeography] Best match below threshold: ${
+      bestMatch.officialName
+    } (${(bestMatch.similarity * 100).toFixed(1)}%)`,
+    {
+      query: name,
+    }
+  );
+
   return null;
 }
 
@@ -408,6 +417,9 @@ async function searchOpenGeographyPortal(
 
   // Try parish first if it looks like one
   if (isParish) {
+    console.debug(
+      `[searchOpenGeographyPortal] Attempting parish search for ${normalizedName}`
+    );
     const parish = await searchParish(normalizedName);
     if (parish) {
       // Look up parent LAD
@@ -430,6 +442,9 @@ async function searchOpenGeographyPortal(
 
   // Try county if it looks like one
   if (isCounty) {
+    console.debug(
+      `[searchOpenGeographyPortal] Attempting county search for ${normalizedName}`
+    );
     const county = await searchCounty(normalizedName);
     if (county) {
       return {
@@ -448,6 +463,9 @@ async function searchOpenGeographyPortal(
   }
 
   // Try LAD
+  console.debug(
+    `[searchOpenGeographyPortal] Attempting LAD search for ${normalizedName}`
+  );
   const lad = await searchLAD(normalizedName);
   if (lad) {
     // Look up parent county (may not exist for unitary authorities)
@@ -471,6 +489,9 @@ async function searchOpenGeographyPortal(
   // (we already tried parish above)
   if (!isParish && !isCounty) {
     // Try parish as fallback for unknown types
+    console.debug(
+      `[searchOpenGeographyPortal] Fallback: attempting parish search for ${normalizedName}`
+    );
     const parish = await searchParish(normalizedName);
     if (parish) {
       const parentLad = await lookupParishParentLAD(parish.gssCode);
@@ -490,6 +511,9 @@ async function searchOpenGeographyPortal(
     }
 
     // Try county as fallback
+    console.debug(
+      `[searchOpenGeographyPortal] Fallback: attempting county search for ${normalizedName}`
+    );
     const county = await searchCounty(normalizedName);
     if (county) {
       return {
