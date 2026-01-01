@@ -3,9 +3,9 @@ import { read, utils, type WorkBook } from "xlsx";
 
 import type { DbClient } from "@/db";
 import {
+  buyers,
   entities,
   councils,
-  organisations,
   pipelineAssets,
   pipelineSkippedRows,
   spendEntries,
@@ -256,17 +256,17 @@ export const importCouncilSpendExcelStage: PipelineStage<ImportCouncilSpendExcel
           await ctx.log({
             level: "warn",
             message:
-              "Truncating all spend entries, organisations, and related entities",
+              "Truncating all spend entries, buyers, and related entities",
           });
           await tx.delete(spendEntries);
-          await tx.delete(organisations);
+          await tx.delete(buyers);
           await tx.delete(councils);
           // Only delete council-type entities (preserve company entities)
           await tx.delete(entities).where(eq(entities.entityType, "council"));
           await ctx.log({
             level: "warn",
             message:
-              "Truncated all spend entries, organisations, and council entities",
+              "Truncated all spend entries, buyers, and council entities",
           });
         } else {
           await ctx.log({
@@ -535,9 +535,13 @@ async function getOrCreateCouncilByGssCode(
     parentEntityId,
   });
 
-  // Create the organisation record
-  await client.insert(organisations).values({
+  // Create the buyer record
+  await client.insert(buyers).values({
+    name: metadata.officialName,
     entityId: newEntity.id,
+    matchStatus: "matched",
+    matchConfidence: "1.00",
+    matchAttemptedAt: new Date(),
     officialWebsite: metadata.homepageUrl || null,
   });
 
@@ -554,7 +558,7 @@ async function syncCouncils(
 ): Promise<SyncCouncilsResult> {
   await ctx.log({
     level: "debug",
-    message: "Loading existing council organisations from database",
+    message: "Loading existing council buyers from database",
   });
 
   // Build lookup from GSS code to official CSV name for normalization
@@ -566,17 +570,18 @@ async function syncCouncils(
     }
   }
 
-  // Load existing councils with their GSS codes for lookup
+  // Load existing council buyers with their GSS codes for lookup
   const existing = await client
     .select({
-      id: organisations.id,
-      entityId: organisations.entityId,
+      id: buyers.id,
+      name: buyers.name,
+      entityId: buyers.entityId,
       entityName: entities.name,
       registryId: entities.registryId,
       gssCode: councils.gssCode,
     })
-    .from(organisations)
-    .leftJoin(entities, eq(organisations.entityId, entities.id))
+    .from(buyers)
+    .leftJoin(entities, eq(buyers.entityId, entities.id))
     .leftJoin(councils, eq(councils.entityId, entities.id))
     .where(eq(entities.entityType, "council"));
 
@@ -586,8 +591,9 @@ async function syncCouncils(
   const entityIdByGssCode = new Map<string, number>();
 
   for (const row of existing) {
-    if (row.entityName) {
-      idByKey.set(normaliseName(row.entityName), row.id);
+    // Use buyer name for lookup key
+    if (row.name) {
+      idByKey.set(normaliseName(row.name), row.id);
     }
     // Also index by GSS code and registry_id for duplicate detection
     if (row.gssCode) {
@@ -612,7 +618,7 @@ async function syncCouncils(
 
   await ctx.log({
     level: "debug",
-    message: "Loaded existing council organisations",
+    message: "Loaded existing council buyers",
     meta: { existingCount: idByKey.size, gssCodeCount: idByGssCode.size },
   });
 
@@ -715,12 +721,16 @@ async function syncCouncils(
     });
 
     const [created] = await client
-      .insert(organisations)
+      .insert(buyers)
       .values({
+        name: metadata.officialName || name,
         entityId: newEntity.id,
+        matchStatus: "matched",
+        matchConfidence: "1.00",
+        matchAttemptedAt: new Date(),
         officialWebsite: metadata.homepageUrl || null,
       })
-      .returning({ id: organisations.id });
+      .returning({ id: buyers.id });
 
     idByKey.set(key, created.id);
     // Also add the official name to the lookup
@@ -799,7 +809,7 @@ async function importSpendSheets(
   client: any,
   workbook: WorkBook,
   sheetNames: string[],
-  orgIdByKey: Map<string, number>,
+  buyerIdByKey: Map<string, number>,
   supplierIdByKey: Map<string, number>,
   assetId: number,
   ctx: PipelineContext
@@ -884,25 +894,25 @@ async function importSpendSheets(
       const row = rows[rowIndex];
       if (!Array.isArray(row)) continue;
 
-      const orgNameRaw = cleanString(row[0]);
+      const buyerNameRaw = cleanString(row[0]);
       if (
-        !orgNameRaw ||
+        !buyerNameRaw ||
         ["council", "organisation", "authority"].includes(
-          orgNameRaw.toLowerCase()
+          buyerNameRaw.toLowerCase()
         )
       ) {
         paymentsSkipped++;
         sheetPaymentsSkipped++;
-        const reason = "missing or header org name";
+        const reason = "missing or header buyer name";
         skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
         continue;
       }
 
-      const orgId = orgIdByKey.get(normaliseName(orgNameRaw));
-      if (!orgId) {
+      const buyerId = buyerIdByKey.get(normaliseName(buyerNameRaw));
+      if (!buyerId) {
         paymentsSkipped++;
         sheetPaymentsSkipped++;
-        const reason = `unknown council '${orgNameRaw}'`;
+        const reason = `unknown council '${buyerNameRaw}'`;
         skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
         skippedRows.push({
           runId: ctx.runId,
@@ -938,7 +948,8 @@ async function importSpendSheets(
       if (amountResult.amount !== null && dateResult.iso) {
         batch.push({
           assetId,
-          organisationId: orgId,
+          rawBuyer: buyerNameRaw,
+          buyerId,
           supplierId: supplierIdByKey.get(supplier),
           rawSupplier: supplier,
           amount: amountResult.amount.toFixed(2),

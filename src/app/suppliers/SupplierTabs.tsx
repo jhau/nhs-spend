@@ -11,7 +11,11 @@ interface SupplierTabsProps {
   pendingCount: number;
 }
 
-export function SupplierTabs({ totalCount, matchedCount, pendingCount }: SupplierTabsProps) {
+export function SupplierTabs({
+  totalCount,
+  matchedCount,
+  pendingCount,
+}: SupplierTabsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = searchParams.get("tab") || "directory";

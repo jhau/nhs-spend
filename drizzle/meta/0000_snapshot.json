@@ -1,5 +1,5 @@
 {
-  "id": "2432a83c-4a11-4b4a-a618-11d95c5fc183",
+  "id": "e39ff9ca-030a-4903-a0f9-f0aaa64d02e6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -142,6 +142,161 @@
           "tableTo": "pipeline_runs",
           "columnsFrom": [
             "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.buyers": {
+      "name": "buyers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match_status": {
+          "name": "match_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "match_confidence": {
+          "name": "match_confidence",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match_attempted_at": {
+          "name": "match_attempted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manually_verified": {
+          "name": "manually_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "official_website": {
+          "name": "official_website",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spending_data_url": {
+          "name": "spending_data_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "missing_data_note": {
+          "name": "missing_data_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_via": {
+          "name": "verified_via",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "buyers_name_unique": {
+          "name": "buyers_name_unique",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "buyers_entity_idx": {
+          "name": "buyers_entity_idx",
+          "columns": [
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "buyers_status_idx": {
+          "name": "buyers_status_idx",
+          "columns": [
+            {
+              "expression": "match_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "buyers_entity_id_entities_id_fk": {
+          "name": "buyers_entity_id_entities_id_fk",
+          "tableFrom": "buyers",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
           ],
           "columnsTo": [
             "id"
@@ -577,6 +732,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "parent_entity_id": {
+          "name": "parent_entity_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "raw_data": {
           "name": "raw_data",
           "type": "jsonb",
@@ -620,6 +781,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "councils_parent_entity_idx": {
+          "name": "councils_parent_entity_idx",
+          "columns": [
+            {
+              "expression": "parent_entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -634,6 +810,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "councils_parent_entity_id_entities_id_fk": {
+          "name": "councils_parent_entity_id_entities_id_fk",
+          "tableFrom": "councils",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "parent_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -809,6 +998,118 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.government_departments": {
+      "name": "government_departments",
+      "schema": "",
+      "columns": {
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "acronym": {
+          "name": "acronym",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organisation_type": {
+          "name": "organisation_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organisation_state": {
+          "name": "organisation_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "link": {
+          "name": "link",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo_url": {
+          "name": "logo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_data": {
+          "name": "raw_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "government_departments_slug_unique": {
+          "name": "government_departments_slug_unique",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "government_departments_type_idx": {
+          "name": "government_departments_type_idx",
+          "columns": [
+            {
+              "expression": "organisation_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "government_departments_entity_id_entities_id_fk": {
+          "name": "government_departments_entity_id_entities_id_fk",
+          "tableFrom": "government_departments",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.nhs_organisations": {
       "name": "nhs_organisations",
       "schema": "",
@@ -946,92 +1247,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.organisations": {
-      "name": "organisations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "entity_id": {
-          "name": "entity_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "official_website": {
-          "name": "official_website",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "spending_data_url": {
-          "name": "spending_data_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "missing_data_note": {
-          "name": "missing_data_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_via": {
-          "name": "verified_via",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "organisations_entity_unique": {
-          "name": "organisations_entity_unique",
-          "columns": [
-            {
-              "expression": "entity_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "organisations_entity_id_entities_id_fk": {
-          "name": "organisations_entity_id_entities_id_fk",
-          "tableFrom": "organisations",
-          "tableTo": "entities",
-          "columnsFrom": [
-            "entity_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1374,6 +1589,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "params": {
+          "name": "params",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "started_at": {
           "name": "started_at",
           "type": "timestamp with time zone",
@@ -1564,8 +1785,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "organisation_id": {
-          "name": "organisation_id",
+        "raw_buyer": {
+          "name": "raw_buyer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "buyer_id": {
+          "name": "buyer_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
@@ -1627,11 +1854,11 @@
         }
       },
       "indexes": {
-        "spend_entries_org_payment_idx": {
-          "name": "spend_entries_org_payment_idx",
+        "spend_entries_buyer_payment_idx": {
+          "name": "spend_entries_buyer_payment_idx",
           "columns": [
             {
-              "expression": "organisation_id",
+              "expression": "buyer_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1705,12 +1932,12 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "spend_entries_organisation_id_organisations_id_fk": {
-          "name": "spend_entries_organisation_id_organisations_id_fk",
+        "spend_entries_buyer_id_buyers_id_fk": {
+          "name": "spend_entries_buyer_id_buyers_id_fk",
           "tableFrom": "spend_entries",
-          "tableTo": "organisations",
+          "tableTo": "buyers",
           "columnsFrom": [
-            "organisation_id"
+            "buyer_id"
           ],
           "columnsTo": [
             "id"
@@ -1770,6 +1997,12 @@
         "match_confidence": {
           "name": "match_confidence",
           "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match_attempted_at": {
+          "name": "match_attempted_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

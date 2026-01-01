@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import { read, utils, type WorkBook } from "xlsx";
 
 import {
+  buyers,
   entities,
-  organisations,
   pipelineAssets,
   pipelineSkippedRows,
   spendEntries,
@@ -128,7 +128,7 @@ export const importGovDeptSpendExcelStage: PipelineStage<ImportGovDeptSpendExcel
       const result = await ctx.db.transaction(async (tx) => {
         if (input.truncateAll) {
           await tx.delete(spendEntries);
-          await tx.delete(organisations);
+          await tx.delete(buyers);
           await tx.delete(entities).where(eq(entities.entityType, "government_department"));
         } else {
           await tx
@@ -236,17 +236,18 @@ async function syncGovDepts(
 ): Promise<SyncGovDeptsResult> {
   const existing = await client
     .select({
-      id: organisations.id,
+      id: buyers.id,
+      name: buyers.name,
       entityName: entities.name,
     })
-    .from(organisations)
-    .leftJoin(entities, eq(organisations.entityId, entities.id))
+    .from(buyers)
+    .leftJoin(entities, eq(buyers.entityId, entities.id))
     .where(eq(entities.entityType, "government_department"));
 
   const idByKey = new Map<string, number>();
   for (const row of existing) {
-    if (row.entityName) {
-      idByKey.set(normaliseName(row.entityName), row.id);
+    if (row.name) {
+      idByKey.set(normaliseName(row.name), row.id);
     }
   }
 
@@ -266,12 +267,16 @@ async function syncGovDepts(
     if (profile) {
       const entityId = await findOrCreateGovDepartmentEntity(client, profile);
       const [created] = await client
-        .insert(organisations)
+        .insert(buyers)
         .values({
+          name: profile.title,
           entityId,
+          matchStatus: "matched",
+          matchConfidence: "1.00",
+          matchAttemptedAt: new Date(),
           officialWebsite: profile.link ? `https://www.gov.uk${profile.link}` : null,
         })
-        .returning({ id: organisations.id });
+        .returning({ id: buyers.id });
       
       idByKey.set(key, created.id);
       inserted++;
@@ -320,7 +325,7 @@ async function importSpendSheets(
   client: any,
   workbook: WorkBook,
   sheetNames: string[],
-  orgIdByKey: Map<string, number>,
+  buyerIdByKey: Map<string, number>,
   supplierIdByKey: Map<string, number>,
   assetId: number,
   ctx: PipelineContext
@@ -362,12 +367,12 @@ async function importSpendSheets(
       const row = rows[rowIndex];
       if (!Array.isArray(row)) continue;
 
-      const orgNameRaw = cleanString(row[0]);
-      const orgId = orgIdByKey.get(normaliseName(orgNameRaw));
+      const buyerNameRaw = cleanString(row[0]);
+      const buyerId = buyerIdByKey.get(normaliseName(buyerNameRaw));
       
-      if (!orgId) {
+      if (!buyerId) {
         paymentsSkipped++;
-        const reason = `unknown department '${orgNameRaw}'`;
+        const reason = `unknown department '${buyerNameRaw}'`;
         skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
         skippedRows.push({
           runId: ctx.runId,
@@ -387,7 +392,8 @@ async function importSpendSheets(
       if (amountResult.amount !== null && dateResult.iso) {
         batch.push({
           assetId,
-          organisationId: orgId,
+          rawBuyer: buyerNameRaw,
+          buyerId,
           supplierId: supplierIdByKey.get(supplier),
           rawSupplier: supplier,
           amount: amountResult.amount.toFixed(2),

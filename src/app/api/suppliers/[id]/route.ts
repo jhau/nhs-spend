@@ -43,7 +43,7 @@ export async function GET(
       SELECT 
         COALESCE(SUM(se.amount), 0) as total_spend,
         COUNT(*) as transaction_count,
-        COUNT(DISTINCT se.organisation_id) as buyer_count,
+        COUNT(DISTINCT se.buyer_id) as buyer_count,
         MIN(se.payment_date) as earliest_date,
         MAX(se.payment_date) as latest_date
       FROM spend_entries se
@@ -61,18 +61,18 @@ export async function GET(
     // Get top buyers for this supplier
     const topBuyersRes = await db.execute(sql.raw(`
       SELECT 
-        o.id,
-        e.name,
+        b.id,
+        b.name,
         nhs.org_sub_type as trust_type,
         SUM(se.amount) as total_spend,
         COUNT(*) as transaction_count
       FROM spend_entries se
-      JOIN organisations o ON o.id = se.organisation_id
-      JOIN entities e ON e.id = o.entity_id
+      JOIN buyers b ON b.id = se.buyer_id
+      LEFT JOIN entities e ON e.id = b.entity_id
       LEFT JOIN nhs_organisations nhs ON nhs.entity_id = e.id
       WHERE se.supplier_id = ${supplierId}
       ${dateFilter}
-      GROUP BY o.id, e.name, nhs.org_sub_type
+      GROUP BY b.id, b.name, nhs.org_sub_type
       ORDER BY total_spend DESC
       LIMIT 10
     `));
@@ -95,8 +95,8 @@ export async function GET(
     const topTransactionsRes = await db.execute(sql.raw(`
       SELECT 
         se.id,
-        o.id as buyer_id,
-        e.name as buyer,
+        b.id as buyer_id,
+        be.name as buyer,
         se.amount,
         se.payment_date,
         se.asset_id,
@@ -105,8 +105,8 @@ export async function GET(
         pa.original_name,
         (SELECT pr.id FROM pipeline_runs pr WHERE pr.asset_id = se.asset_id AND pr.status = 'succeeded' ORDER BY pr.finished_at DESC LIMIT 1) as run_id
       FROM spend_entries se
-      JOIN organisations o ON o.id = se.organisation_id
-      JOIN entities e ON e.id = o.entity_id
+      JOIN buyers b ON b.id = se.buyer_id
+      JOIN entities be ON be.id = b.entity_id
       JOIN pipeline_assets pa ON pa.id = se.asset_id
       WHERE se.supplier_id = ${supplierId}
       ${dateFilter}
@@ -118,8 +118,8 @@ export async function GET(
     const transactionsRes = await db.execute(sql.raw(`
       SELECT 
         se.id,
-        o.id as buyer_id,
-        e.name as buyer,
+        b.id as buyer_id,
+        be.name as buyer,
         se.amount,
         se.payment_date,
         se.asset_id,
@@ -128,8 +128,8 @@ export async function GET(
         pa.original_name,
         (SELECT pr.id FROM pipeline_runs pr WHERE pr.asset_id = se.asset_id AND pr.status = 'succeeded' ORDER BY pr.finished_at DESC LIMIT 1) as run_id
       FROM spend_entries se
-      JOIN organisations o ON o.id = se.organisation_id
-      JOIN entities e ON e.id = o.entity_id
+      JOIN buyers b ON b.id = se.buyer_id
+      JOIN entities be ON be.id = b.entity_id
       JOIN pipeline_assets pa ON pa.id = se.asset_id
       WHERE se.supplier_id = ${supplierId}
       ${dateFilter}

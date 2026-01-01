@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { readFile, utils, type WorkBook } from "xlsx";
 
 import { db, type DbClient } from "@/db";
-import { organisations, spendEntries } from "@/db/schema";
+import { buyers, spendEntries } from "@/db/schema";
 
 type CliOptions = {
   filePath: string;
@@ -133,11 +133,11 @@ async function main() {
 
       const result = await db.transaction(async (tx: DbClient) => {
         if (options.truncate && filesToProcess.indexOf(filePath) === 0) {
-          // Only truncate once, on the first file (before syncing trusts)
+          // Only truncate once, on the first file (before syncing buyers)
           await tx.delete(spendEntries);
-          await tx.delete(organisations);
+          await tx.delete(buyers);
           console.info(
-            "  • Truncated all existing spend entries and organisations"
+            "  • Truncated all existing spend entries and buyers"
           );
         } else {
           // Delete only entries from this asset to avoid duplicates
@@ -414,9 +414,9 @@ function gatherTrustNames(
 }
 
 /**
- * Syncs organisations to the database, creating or updating records as needed.
+ * Syncs buyers to the database, creating or updating records as needed.
  * Uses normalized names as keys to prevent duplicates from different capitalizations.
- * The organisations table has a unique constraint on the name field, ensuring
+ * The buyers table has a unique constraint on the name field, ensuring
  * each normalized name appears only once in the database.
  */
 async function syncTrusts(
@@ -424,7 +424,7 @@ async function syncTrusts(
   metadataMap: Map<string, TrustMetadata>,
   discoveredTrusts: Map<string, string>
 ): Promise<SyncTrustsResult> {
-  const existing = await client.select().from(organisations);
+  const existing = await client.select().from(buyers);
   const idByKey = new Map<string, number>();
   for (const row of existing) {
     idByKey.set(normaliseTrustName(row.name), row.id);
@@ -434,21 +434,21 @@ async function syncTrusts(
   let updated = 0;
 
   for (const [key, metadata] of metadataMap) {
-    const payloadForInsert = buildOrganisationInsert(metadata);
-    const payloadForUpdate = buildOrganisationUpdate(metadata);
+    const payloadForInsert = buildBuyerInsert(metadata);
+    const payloadForUpdate = buildBuyerUpdate(metadata);
     const existingId = idByKey.get(key);
 
     if (existingId) {
       await client
-        .update(organisations)
+        .update(buyers)
         .set(payloadForUpdate)
-        .where(eq(organisations.id, existingId));
+        .where(eq(buyers.id, existingId));
       updated++;
     } else {
       const [created] = await client
-        .insert(organisations)
+        .insert(buyers)
         .values(payloadForInsert)
-        .returning({ id: organisations.id });
+        .returning({ id: buyers.id });
       idByKey.set(key, created.id);
       inserted++;
     }
@@ -458,18 +458,16 @@ async function syncTrusts(
   for (const [key, name] of discoveredTrusts) {
     if (idByKey.has(key)) continue;
     const [created] = await client
-      .insert(organisations)
+      .insert(buyers)
       .values({
         name,
-        trustType: null,
-        odsCode: null,
-        postCode: null,
+        matchStatus: "pending",
         officialWebsite: null,
         spendingDataUrl: null,
         missingDataNote: null,
         verifiedVia: null,
       })
-      .returning({ id: organisations.id });
+      .returning({ id: buyers.id });
     idByKey.set(key, created.id);
     createdWithoutMetadata++;
   }
@@ -477,30 +475,26 @@ async function syncTrusts(
   return { idByKey, inserted, updated, createdWithoutMetadata };
 }
 
-function buildOrganisationInsert(metadata: TrustMetadata) {
+function buildBuyerInsert(metadata: TrustMetadata) {
   return {
     name: metadata.name,
-    trustType: metadata.trustType ?? null,
-    odsCode: metadata.odsCode ?? null,
-    postCode: metadata.postCode ?? null,
+    matchStatus: "pending" as const,
     officialWebsite: metadata.officialWebsite ?? null,
     spendingDataUrl: metadata.spendingDataUrl ?? null,
     missingDataNote: metadata.missingDataNote ?? null,
     verifiedVia: metadata.verifiedVia ?? null,
-  } satisfies typeof organisations.$inferInsert;
+  } satisfies typeof buyers.$inferInsert;
 }
 
-function buildOrganisationUpdate(metadata: TrustMetadata) {
+function buildBuyerUpdate(metadata: TrustMetadata) {
   return {
     name: metadata.name,
-    trustType: metadata.trustType ?? null,
-    odsCode: metadata.odsCode ?? null,
-    postCode: metadata.postCode ?? null,
     officialWebsite: metadata.officialWebsite ?? null,
     spendingDataUrl: metadata.spendingDataUrl ?? null,
     missingDataNote: metadata.missingDataNote ?? null,
     verifiedVia: metadata.verifiedVia ?? null,
-  } satisfies Partial<typeof organisations.$inferInsert>;
+    updatedAt: new Date(),
+  } satisfies Partial<typeof buyers.$inferInsert>;
 }
 
 async function importSpendSheets(
@@ -600,7 +594,8 @@ async function importSpendSheets(
 
       batch.push({
         assetId,
-        organisationId: trustId,
+        rawBuyer: trustNameRaw,
+        buyerId: trustId,
         rawSupplier: supplier,
         amount: amountResult.amount.toFixed(2),
         paymentDate: dateResult.iso,

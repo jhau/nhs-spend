@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getEntityData } from "@/lib/data/entities";
 import { EntityFilters } from "./EntityFilters";
 import { EntityPagination } from "./EntityPagination";
+import { AISummarySection } from "./AISummarySection";
 
 function formatCurrency(amount: number): string {
   if (amount >= 1_000_000_000) {
@@ -60,12 +61,14 @@ export default async function EntityPage({
   const startDate = (sParams.startDate as string) || defaultDates.startDate;
   const endDate = (sParams.endDate as string) || defaultDates.endDate;
   const page = parseInt((sParams.page as string) || "1");
+  const requestedView = sParams.view as "supplier" | "buyer" | undefined;
 
   const data = await getEntityData(entityId, {
     startDate,
     endDate,
     page,
     limit: 50,
+    view: requestedView,
   });
 
   if (!data) {
@@ -81,14 +84,20 @@ export default async function EntityPage({
 
   const {
     entity,
+    activeView: view,
     linkedSuppliers,
+    linkedBuyers,
+    hasSupplierData,
+    hasBuyerData,
     summary,
-    topBuyers,
+    topCounterparts,
     monthlySpend,
     topTransactions,
     transactions,
     pagination,
   } = data;
+
+  const showTabs = linkedSuppliers.length > 0 && linkedBuyers.length > 0;
 
   return (
     <div style={styles.container}>
@@ -161,26 +170,60 @@ export default async function EntityPage({
         </div>
       </div>
 
-      {/* Linked Suppliers */}
+      {/* View Switcher Tabs */}
+      {showTabs && (
+        <div style={styles.tabs}>
+          <Link
+            href={`/entities/${entityId}?view=supplier&startDate=${startDate}&endDate=${endDate}`}
+            style={{
+              ...styles.tab,
+              ...(view === "supplier" ? styles.activeTab : {}),
+            }}
+          >
+            As Supplier
+          </Link>
+          <Link
+            href={`/entities/${entityId}?view=buyer&startDate=${startDate}&endDate=${endDate}`}
+            style={{
+              ...styles.tab,
+              ...(view === "buyer" ? styles.activeTab : {}),
+            }}
+          >
+            As Buyer
+          </Link>
+        </div>
+      )}
+
+      {/* Linked Identities */}
       <div style={{ ...styles.card, marginBottom: "24px" }}>
         <h2 style={{ ...styles.cardTitle, marginBottom: "12px" }}>
-          Consolidated Suppliers ({linkedSuppliers.length})
+          {view === "supplier"
+            ? `Consolidated Suppliers (${linkedSuppliers.length})`
+            : `Consolidated Buyers (${linkedBuyers.length})`}
         </h2>
         <div style={styles.supplierTags}>
-          {linkedSuppliers.map((s: any) => (
-            <Link
-              key={s.id}
-              href={`/suppliers/${s.id}`}
-              style={styles.supplierTag}
-            >
-              {s.name}
-            </Link>
-          ))}
+          {(view === "supplier" ? linkedSuppliers : linkedBuyers).map(
+            (s: any) => (
+              <Link
+                key={s.id}
+                href={view === "supplier" ? `/suppliers/${s.id}` : `/buyers/${s.id}`}
+                style={styles.supplierTag}
+              >
+                {s.name}
+              </Link>
+            )
+          )}
         </div>
       </div>
 
       {/* Filters */}
       <EntityFilters startDate={startDate} endDate={endDate} />
+
+      {/* AI Summary Section */}
+      <AISummarySection 
+        entityId={entityId} 
+        initialData={entity.ai_summary ? { summary: entity.ai_summary, news: entity.ai_news } : null} 
+      />
 
       {/* Summary Cards */}
       {summary && (
@@ -191,7 +234,9 @@ export default async function EntityPage({
             <div style={styles.summaryValue}>
               {formatCurrency(summary.totalSpend)}
             </div>
-            <div style={styles.summaryLabel}>Total Consolidated Spend</div>
+            <div style={styles.summaryLabel}>
+              Total {view === "supplier" ? "Consolidated" : "Buyer"} Spend
+            </div>
           </div>
           <div style={styles.summaryCard}>
             <div style={styles.summaryValue}>
@@ -201,9 +246,13 @@ export default async function EntityPage({
           </div>
           <div style={styles.summaryCard}>
             <div style={styles.summaryValue}>
-              {formatNumber(summary.buyerCount)}
+              {formatNumber(
+                view === "supplier" ? summary.buyerCount : summary.supplierCount
+              )}
             </div>
-            <div style={styles.summaryLabel}>NHS Buyers</div>
+            <div style={styles.summaryLabel}>
+              {view === "supplier" ? "NHS Buyers" : "Suppliers"}
+            </div>
           </div>
           <div style={styles.summaryCard}>
             <div style={styles.summaryValue}>
@@ -220,31 +269,35 @@ export default async function EntityPage({
 
       {/* Three Column Layout */}
       <div style={styles.threeColumn}>
-        {/* Top Buyers */}
+        {/* Top Counterparts */}
         <div style={styles.card}>
           <h2 style={{ ...styles.cardTitle, marginBottom: "16px" }}>
-            Top NHS Buyers
+            {view === "supplier" ? "Top NHS Buyers" : "Top Suppliers"}
           </h2>
           <div style={styles.buyerList}>
-            {topBuyers.length === 0 ? (
-              <div style={styles.emptyState}>No buyer data</div>
+            {topCounterparts.length === 0 ? (
+              <div style={styles.emptyState}>No data found</div>
             ) : (
-              topBuyers.map((buyer: any, index: number) => (
+              topCounterparts.map((counterpart: any, index: number) => (
                 <Link
-                  key={buyer.id}
-                  href={`/buyers/${buyer.id}`}
+                  key={counterpart.id}
+                  href={
+                    view === "supplier"
+                      ? `/buyers/${counterpart.id}`
+                      : `/suppliers/${counterpart.id}`
+                  }
                   style={{ textDecoration: "none" }}
                 >
                   <div style={styles.buyerRow}>
                     <div style={styles.buyerRank}>{index + 1}</div>
                     <div style={styles.buyerInfo}>
-                      <div style={styles.buyerName}>{buyer.name}</div>
+                      <div style={styles.buyerName}>{counterpart.name}</div>
                       <div style={styles.buyerMeta}>
-                        {formatNumber(buyer.transactionCount)} transactions
+                        {formatNumber(counterpart.transactionCount)} transactions
                       </div>
                     </div>
                     <div style={styles.buyerSpend}>
-                      {formatCurrency(buyer.totalSpend)}
+                      {formatCurrency(counterpart.totalSpend)}
                     </div>
                   </div>
                 </Link>
@@ -267,16 +320,22 @@ export default async function EntityPage({
                   <div style={styles.topTxRank}>{index + 1}</div>
                   <div style={styles.topTxInfo}>
                     <Link
-                      href={`/buyers/${tx.buyer_id}`}
+                      href={
+                        view === "supplier"
+                          ? `/buyers/${tx.buyer_id}`
+                          : `/suppliers/${tx.supplier_id}`
+                      }
                       style={styles.topTxBuyer}
                     >
-                      {tx.buyer}
+                      {view === "supplier" ? tx.buyer : tx.supplier_name}
                     </Link>
                     <div style={styles.topTxDate}>
                       {formatDate(tx.payment_date)}
                     </div>
                     <div style={styles.topTxSupplier}>
-                      via {tx.supplier_name}
+                      {view === "supplier"
+                        ? `by ${tx.buyer}`
+                        : `to ${tx.supplier_name}`}
                     </div>
                   </div>
                   <div style={styles.topTxAmount}>
@@ -294,7 +353,7 @@ export default async function EntityPage({
         {/* Monthly Spend */}
         <div style={styles.card}>
           <h2 style={{ ...styles.cardTitle, marginBottom: "16px" }}>
-            Monthly Payments
+            Monthly {view === "supplier" ? "Payments" : "Spending"}
           </h2>
           <div style={styles.monthlyList}>
             {monthlySpend.length === 0 ? (
@@ -338,8 +397,19 @@ export default async function EntityPage({
             <thead>
               <tr>
                 <th style={styles.th}>Date</th>
-                <th style={styles.th}>Buyer</th>
-                <th style={styles.th}>Supplier (Source)</th>
+                {view === "supplier" ? (
+                  <>
+                    <th style={styles.th}>Buyer</th>
+                    <th style={styles.th}>Linked Buyer</th>
+                    <th style={styles.th}>Supplier (Source)</th>
+                  </>
+                ) : (
+                  <>
+                    <th style={styles.th}>Supplier</th>
+                    <th style={styles.th}>Linked Entity</th>
+                    <th style={styles.th}>Buyer (Source)</th>
+                  </>
+                )}
                 <th style={styles.th}>Source File</th>
                 <th style={{ ...styles.th, textAlign: "right" }}>Amount</th>
               </tr>
@@ -347,7 +417,7 @@ export default async function EntityPage({
             <tbody>
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={styles.emptyCell}>
+                  <td colSpan={6} style={styles.emptyCell}>
                     No transactions found
                   </td>
                 </tr>
@@ -355,19 +425,69 @@ export default async function EntityPage({
                 transactions.map((tx: any) => (
                   <tr key={tx.id} style={styles.tr}>
                     <td style={styles.td}>{formatDate(tx.payment_date)}</td>
-                    <td style={styles.td}>
-                      <Link
-                        href={`/buyers/${tx.buyer_id}`}
-                        style={styles.buyerLink}
-                      >
-                        {tx.buyer}
-                      </Link>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.sourceSupplier}>
-                        {tx.supplier_name}
-                      </span>
-                    </td>
+                    {view === "supplier" ? (
+                      <>
+                        <td style={styles.td}>
+                          <Link
+                            href={`/buyers/${tx.buyer_id}`}
+                            style={styles.buyerLink}
+                          >
+                            {tx.buyer}
+                          </Link>
+                        </td>
+                        <td style={styles.td}>
+                          {tx.buyer_entity_id ? (
+                            <Link
+                              href={`/entities/${tx.buyer_entity_id}`}
+                              style={styles.buyerLink}
+                            >
+                              {tx.buyer_entity_name}
+                            </Link>
+                          ) : (
+                            <span style={styles.sourceSupplier}>—</span>
+                          )}
+                        </td>
+                        <td style={styles.td}>
+                          <Link
+                            href={`/suppliers/${tx.supplier_id}`}
+                            style={styles.sourceSupplier}
+                          >
+                            {tx.supplier_name}
+                          </Link>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={styles.td}>
+                          <Link
+                            href={`/suppliers/${tx.supplier_id}`}
+                            style={styles.buyerLink}
+                          >
+                            {tx.supplier_name}
+                          </Link>
+                        </td>
+                        <td style={styles.td}>
+                          {tx.supplier_entity_id ? (
+                            <Link
+                              href={`/entities/${tx.supplier_entity_id}`}
+                              style={styles.buyerLink}
+                            >
+                              {tx.supplier_entity_name}
+                            </Link>
+                          ) : (
+                            <span style={styles.sourceSupplier}>—</span>
+                          )}
+                        </td>
+                        <td style={styles.td}>
+                          <Link
+                            href={`/buyers/${tx.buyer_id}`}
+                            style={styles.sourceSupplier}
+                          >
+                            {tx.buyer}
+                          </Link>
+                        </td>
+                      </>
+                    )}
                     <td style={styles.td}>
                       <div style={styles.sourceFileInfo}>
                         {tx.run_id ? (
@@ -479,6 +599,26 @@ const styles: { [key: string]: React.CSSProperties } = {
   companyLink: {
     color: "#5c4d3c",
     textDecoration: "none",
+  },
+  tabs: {
+    display: "flex",
+    gap: "4px",
+    marginBottom: "24px",
+    borderBottom: "1px solid #e8e8e8",
+    paddingBottom: "1px",
+  },
+  tab: {
+    padding: "10px 20px",
+    fontSize: "14px",
+    fontWeight: 500,
+    color: "#666",
+    textDecoration: "none",
+    borderBottom: "2px solid transparent",
+    transition: "all 0.2s",
+  },
+  activeTab: {
+    color: "#1a1a2e",
+    borderBottomColor: "#1a1a2e",
   },
   supplierTags: {
     display: "flex",

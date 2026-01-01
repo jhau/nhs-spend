@@ -3,9 +3,9 @@ import { read, utils, type WorkBook } from "xlsx";
 
 import type { DbClient } from "@/db";
 import {
+  buyers,
   entities,
   nhsOrganisations,
-  organisations,
   pipelineAssets,
   pipelineSkippedRows,
   spendEntries,
@@ -26,7 +26,7 @@ export type ImportSpendExcelInput = {
    */
   assetId: number;
   /**
-   * If true, clears all spend entries + organisations before importing.
+   * If true, clears all spend entries + buyers before importing.
    * Useful early in development; do not use once multiple assets are loaded.
    */
   truncateAll?: boolean;
@@ -273,10 +273,10 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       if (input.truncateAll) {
         await ctx.log({
           level: "warn",
-          message: "Truncating all spend entries, organisations, and related entities",
+          message: "Truncating all spend entries, buyers, and related entities",
         });
         await tx.delete(spendEntries);
-        await tx.delete(organisations);
+        await tx.delete(buyers);
         await tx.delete(nhsOrganisations);
         // Only delete NHS-type entities (preserve company entities)
         await tx.delete(entities).where(
@@ -284,7 +284,7 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
         );
         await ctx.log({
           level: "warn",
-          message: "Truncated all spend entries, organisations, and NHS entities",
+          message: "Truncated all spend entries, buyers, and NHS entities",
         });
       } else {
         await ctx.log({
@@ -304,14 +304,14 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
 
       await ctx.log({
         level: "info",
-        message: `Synchronizing trusts/organisations`,
+        message: `Synchronizing trusts/buyers`,
         meta: {
           metadataCount: metadataMap.size,
           discoveredCount: discoveredTrusts.size,
         },
       });
       const syncTrustsStartTime = Date.now();
-      const trustSyncResult = await syncTrusts(
+      const buyerSyncResult = await syncBuyers(
         tx,
         metadataMap,
         discoveredTrusts,
@@ -320,12 +320,12 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       const syncTrustsDuration = Date.now() - syncTrustsStartTime;
       await ctx.log({
         level: "info",
-        message: `Trusts synchronized`,
+        message: `Buyers synchronized`,
         meta: {
-          inserted: trustSyncResult.inserted,
-          updated: trustSyncResult.updated,
-          createdWithoutMetadata: trustSyncResult.createdWithoutMetadata,
-          totalTrusts: trustSyncResult.idByKey.size,
+          inserted: buyerSyncResult.inserted,
+          updated: buyerSyncResult.updated,
+          createdWithoutMetadata: buyerSyncResult.createdWithoutMetadata,
+          totalBuyers: buyerSyncResult.idByKey.size,
           durationMs: syncTrustsDuration,
         },
       });
@@ -359,7 +359,7 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
         message: `Importing spend data from sheets`,
         meta: {
           sheetCount: dataSheetNames.length,
-          totalTrusts: trustSyncResult.idByKey.size,
+          totalBuyers: buyerSyncResult.idByKey.size,
           totalSuppliers: supplierSyncResult.idByKey.size,
         },
       });
@@ -368,7 +368,7 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
         tx,
         workbook,
         dataSheetNames,
-        trustSyncResult.idByKey,
+        buyerSyncResult.idByKey,
         supplierSyncResult.idByKey,
         input.assetId,
         ctx
@@ -387,7 +387,7 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
         },
       });
 
-      return { trustSyncResult, supplierSyncResult, importSummary };
+      return { buyerSyncResult, supplierSyncResult, importSummary };
     });
     const transactionDuration = Date.now() - transactionStartTime;
     await ctx.log({
@@ -401,10 +401,10 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       warnings: result.importSummary.warnings,
       metrics: {
         assetId: input.assetId,
-        trustsInserted: result.trustSyncResult.inserted,
-        trustsUpdated: result.trustSyncResult.updated,
-        trustsCreatedWithoutMetadata:
-          result.trustSyncResult.createdWithoutMetadata,
+        buyersInserted: result.buyerSyncResult.inserted,
+        buyersUpdated: result.buyerSyncResult.updated,
+        buyersCreatedWithoutMetadata:
+          result.buyerSyncResult.createdWithoutMetadata,
         suppliersInserted: result.supplierSyncResult.inserted,
         sheetsProcessed: result.importSummary.sheetsProcessed,
         paymentsInserted: result.importSummary.paymentsInserted,
@@ -685,7 +685,7 @@ async function syncSuppliers(
   return { idByKey, inserted };
 }
 
-async function syncTrusts(
+async function syncBuyers(
   client: any,
   metadataMap: Map<string, TrustMetadata>,
   discoveredTrusts: Map<string, string>,
@@ -699,32 +699,34 @@ async function syncTrusts(
 ): Promise<SyncTrustsResult> {
   await ctx.log({
     level: "debug",
-    message: "Loading existing organisations from database",
+    message: "Loading existing buyers from database",
   });
   
-  // Load existing organisations with their linked entities
+  // Load existing buyers with their linked entities
   const existing = await client
     .select({
-      id: organisations.id,
-      entityId: organisations.entityId,
+      id: buyers.id,
+      name: buyers.name,
+      entityId: buyers.entityId,
       entityName: entities.name,
     })
-    .from(organisations)
-    .leftJoin(entities, eq(organisations.entityId, entities.id));
+    .from(buyers)
+    .leftJoin(entities, eq(buyers.entityId, entities.id));
   
   const idByKey = new Map<string, number>();
-  const entityIdByOrgId = new Map<number, number | null>();
+  const entityIdByBuyerId = new Map<number, number | null>();
   
   for (const row of existing) {
-    if (row.entityName) {
-      idByKey.set(normaliseTrustName(row.entityName), row.id);
+    // Use buyer name for lookup key
+    if (row.name) {
+      idByKey.set(normaliseTrustName(row.name), row.id);
     }
-    entityIdByOrgId.set(row.id, row.entityId);
+    entityIdByBuyerId.set(row.id, row.entityId);
   }
   
   await ctx.log({
     level: "debug",
-    message: "Loaded existing organisations",
+    message: "Loaded existing buyers",
     meta: { existingCount: idByKey.size },
   });
 
@@ -733,16 +735,16 @@ async function syncTrusts(
 
   await ctx.log({
     level: "debug",
-    message: "Syncing trusts with metadata",
+    message: "Syncing buyers with metadata",
     meta: { metadataCount: metadataMap.size },
   });
   
   for (const [key, metadata] of metadataMap) {
-    const existingOrgId = idByKey.get(key);
+    const existingBuyerId = idByKey.get(key);
 
-    if (existingOrgId) {
+    if (existingBuyerId) {
       // Update existing - get the entity ID
-      const existingEntityId = entityIdByOrgId.get(existingOrgId);
+      const existingEntityId = entityIdByBuyerId.get(existingBuyerId);
       
       if (existingEntityId) {
         // Update entity
@@ -764,32 +766,38 @@ async function syncTrusts(
           })
           .where(eq(nhsOrganisations.entityId, existingEntityId));
         
-        // Update organisation (buyer metadata)
+        // Update buyer metadata
         await client
-          .update(organisations)
+          .update(buyers)
           .set({
+            name: metadata.name,
             officialWebsite: metadata.officialWebsite ?? null,
             spendingDataUrl: metadata.spendingDataUrl ?? null,
             missingDataNote: metadata.missingDataNote ?? null,
             verifiedVia: metadata.verifiedVia ?? null,
+            updatedAt: new Date(),
           })
-          .where(eq(organisations.id, existingOrgId));
+          .where(eq(buyers.id, existingBuyerId));
       }
       updated++;
     } else {
-      // Create new entity + NHS org + organisation
+      // Create new entity + NHS org + buyer
       const entityId = await createNhsTrustEntity(client, metadata);
       
       const [created] = await client
-        .insert(organisations)
+        .insert(buyers)
         .values({
+          name: metadata.name,
           entityId,
+          matchStatus: "matched",
+          matchConfidence: "1.00",
+          matchAttemptedAt: new Date(),
           officialWebsite: metadata.officialWebsite ?? null,
           spendingDataUrl: metadata.spendingDataUrl ?? null,
           missingDataNote: metadata.missingDataNote ?? null,
           verifiedVia: metadata.verifiedVia ?? null,
         })
-        .returning({ id: organisations.id });
+        .returning({ id: buyers.id });
       
       idByKey.set(key, created.id);
       inserted++;
@@ -798,7 +806,7 @@ async function syncTrusts(
 
   await ctx.log({
     level: "debug",
-    message: "Creating trusts without metadata",
+    message: "Creating buyers without metadata",
     meta: { discoveredCount: discoveredTrusts.size },
   });
   
@@ -806,19 +814,23 @@ async function syncTrusts(
   for (const [key, name] of discoveredTrusts) {
     if (idByKey.has(key)) continue;
     
-    // Create minimal entity + NHS org + organisation
+    // Create minimal entity + NHS org + buyer
     const entityId = await createNhsTrustEntity(client, { name });
     
     const [created] = await client
-      .insert(organisations)
+      .insert(buyers)
       .values({
+        name,
         entityId,
+        matchStatus: "matched",
+        matchConfidence: "1.00",
+        matchAttemptedAt: new Date(),
         officialWebsite: null,
         spendingDataUrl: null,
         missingDataNote: null,
         verifiedVia: null,
       })
-      .returning({ id: organisations.id });
+      .returning({ id: buyers.id });
     
     idByKey.set(key, created.id);
     createdWithoutMetadata++;
@@ -867,7 +879,7 @@ async function importSpendSheets(
   client: any,
   workbook: WorkBook,
   sheetNames: string[],
-  trustIdByKey: Map<string, number>,
+  buyerIdByKey: Map<string, number>,
   supplierIdByKey: Map<string, number>,
   assetId: number,
   ctx: PipelineContext
@@ -955,11 +967,11 @@ async function importSpendSheets(
       const row = rows[rowIndex];
       if (!Array.isArray(row)) continue;
 
-      const trustNameRaw = cleanString(row[0]);
-      if (!trustNameRaw) {
+      const buyerNameRaw = cleanString(row[0]);
+      if (!buyerNameRaw) {
         paymentsSkipped++;
         sheetPaymentsSkipped++;
-        const reason = "missing trust name";
+        const reason = "missing buyer name";
         skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
         skippedRows.push({
           runId: ctx.runId,
@@ -972,16 +984,16 @@ async function importSpendSheets(
         recordWarning(warnings, `(${sheetName} row ${rowIndex + 1}) ${reason}`);
         continue;
       }
-      if (isHeaderTrustLabel(trustNameRaw)) {
+      if (isHeaderTrustLabel(buyerNameRaw)) {
         continue;
       }
 
-      const trustKey = normaliseTrustName(trustNameRaw);
-      const trustId = trustIdByKey.get(trustKey);
-      if (!trustId) {
+      const buyerKey = normaliseTrustName(buyerNameRaw);
+      const buyerId = buyerIdByKey.get(buyerKey);
+      if (!buyerId) {
         paymentsSkipped++;
         sheetPaymentsSkipped++;
-        const reason = `unknown trust '${trustNameRaw}'`;
+        const reason = `unknown buyer '${buyerNameRaw}'`;
         skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
         skippedRows.push({
           runId: ctx.runId,
@@ -1053,7 +1065,8 @@ async function importSpendSheets(
 
       batch.push({
         assetId,
-        organisationId: trustId,
+        rawBuyer: buyerNameRaw,
+        buyerId,
         supplierId,
         rawSupplier: supplier,
         amount: amountResult.amount.toFixed(2),

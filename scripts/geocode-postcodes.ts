@@ -1,9 +1,14 @@
+/**
+ * @deprecated This script needs updating for the new schema.
+ * Coordinates are now stored on entities, not directly on buyers.
+ * Use the pipeline import stages instead.
+ */
 import "dotenv/config";
 
 import { eq, isNotNull, isNull, and } from "drizzle-orm";
 
 import { db } from "@/db";
-import { organisations } from "@/db/schema";
+import { entities } from "@/db/schema";
 
 interface PostcodeResult {
   status: number;

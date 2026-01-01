@@ -1,3 +1,8 @@
+/**
+ * @deprecated This script needs updating for the new schema.
+ * ODS codes are now stored on nhsOrganisations linked via entities,
+ * not directly on buyers. Use the pipeline import stages instead.
+ */
 import "dotenv/config";
 import * as readline from "readline";
 import * as fs from "fs";
@@ -7,7 +12,7 @@ import stringSimilarity from "string-similarity";
 import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { organisations, spendEntries } from "@/db/schema";
+import { buyers, spendEntries } from "@/db/schema";
 
 const AUTO_APPLY_THRESHOLD = 0.9; // Auto-apply if similarity >= 90%
 
@@ -151,8 +156,8 @@ async function askQuestion(
   });
 }
 
-// Merge duplicate organisation into target, moving all spend data
-async function mergeOrganisations(
+// Merge duplicate buyer into target, moving all spend data
+async function mergeBuyers(
   sourceId: number,
   sourceName: string,
   targetId: number,
@@ -162,19 +167,19 @@ async function mergeOrganisations(
   const countResult = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(spendEntries)
-    .where(eq(spendEntries.organisationId, sourceId));
+    .where(eq(spendEntries.buyerId, sourceId));
   const spendEntriesMoved = countResult[0]?.count || 0;
 
   // Move spend entries from source to target
   if (spendEntriesMoved > 0) {
     await db
       .update(spendEntries)
-      .set({ organisationId: targetId })
-      .where(eq(spendEntries.organisationId, sourceId));
+      .set({ buyerId: targetId })
+      .where(eq(spendEntries.buyerId, sourceId));
   }
 
-  // Delete the source organisation
-  await db.delete(organisations).where(eq(organisations.id, sourceId));
+  // Delete the source buyer
+  await db.delete(buyers).where(eq(buyers.id, sourceId));
 
   console.log(
     `  Merged "${sourceName}" (id: ${sourceId}) into "${targetName}" (id: ${targetId})`
@@ -207,13 +212,13 @@ async function main() {
   const { byOdsCode, byNormalizedName } = loadOfficialData();
   console.log(`Loaded ${byOdsCode.size} official organisation records\n`);
 
-  // Get all organisations from database
+  // Get all buyers from database
   const orgs = await db
     .select()
-    .from(organisations)
-    .orderBy(organisations.name);
+    .from(buyers)
+    .orderBy(buyers.name);
 
-  console.log(`Found ${orgs.length} organisations in database\n`);
+  console.log(`Found ${orgs.length} buyers in database\n`);
 
   const mismatches: Mismatch[] = [];
 

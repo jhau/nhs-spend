@@ -1,9 +1,14 @@
+/**
+ * @deprecated This script needs updating for the new schema.
+ * ICB codes are now stored on nhsOrganisations linked via entities,
+ * not directly on buyers. Use the pipeline import stages instead.
+ */
 import "dotenv/config";
 
 import { eq, isNotNull, isNull, and } from "drizzle-orm";
 
 import { db } from "@/db";
-import { organisations } from "@/db/schema";
+import { buyers, entities, nhsOrganisations } from "@/db/schema";
 
 interface OdsRelationship {
   Status: string;

@@ -1,5 +1,10 @@
+/**
+ * @deprecated This script needs updating for the new schema.
+ * ODS codes and ICB codes are now stored on nhsOrganisations linked via entities,
+ * not directly on buyers. Use the pipeline import stages instead.
+ */
 import { db } from "../src/db";
-import { organisations } from "../src/db/schema";
+import { buyers, entities, nhsOrganisations } from "../src/db/schema";
 import { eq, isNotNull } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";

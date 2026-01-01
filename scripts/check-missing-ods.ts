@@ -1,9 +1,10 @@
 import "dotenv/config";
 
-import { isNull, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { organisations } from "@/db/schema";
+import { buyers, entities, nhsOrganisations } from "@/db/schema";
+import { eq, isNull } from "drizzle-orm";
 
 interface OdsOrganisation {
   Name: string;
@@ -78,14 +79,18 @@ function isLikelyNhsOrganisation(name: string): boolean {
 }
 
 async function main() {
-  // Get all organisations without ODS codes
-  const orgs = await db
-    .select()
-    .from(organisations)
-    .where(isNull(organisations.odsCode))
-    .orderBy(organisations.name);
+  // Get all buyers without linked entities (no ODS codes)
+  const buyersWithoutEntity = await db
+    .select({
+      id: buyers.id,
+      name: buyers.name,
+    })
+    .from(buyers)
+    .where(isNull(buyers.entityId))
+    .orderBy(buyers.name);
 
-  console.log(`Found ${orgs.length} organisations without ODS codes\n`);
+  console.log(`Found ${buyersWithoutEntity.length} buyers without linked entities\n`);
+  const orgs = buyersWithoutEntity;
 
   // Filter to likely NHS organisations
   const nhsOrgs = orgs.filter(org => isLikelyNhsOrganisation(org.name));

@@ -7,10 +7,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const orgId = parseInt(id);
+  const buyerId = parseInt(id);
 
-  if (isNaN(orgId)) {
-    return NextResponse.json({ error: "Invalid organisation ID" }, { status: 400 });
+  if (isNaN(buyerId)) {
+    return NextResponse.json({ error: "Invalid buyer ID" }, { status: 400 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -44,39 +44,42 @@ export async function GET(
   }
 
   try {
-    // Get organisation details with entity and NHS organisation info
-    const orgRes = await db.execute(sql.raw(`
+    // Get buyer details with entity and NHS organisation info
+    const buyerRes = await db.execute(sql.raw(`
       SELECT 
-        o.id,
-        e.name,
+        b.id,
+        b.name as buyer_name,
+        e.name as entity_name,
         e.postal_code as post_code,
         e.latitude,
         e.longitude,
         nhs.org_sub_type as trust_type,
         nhs.ods_code,
-        nhs.parent_ods_code as icb_ods_code
-      FROM organisations o
-      LEFT JOIN entities e ON o.entity_id = e.id
+        nhs.parent_ods_code as icb_ods_code,
+        b.match_status,
+        b.match_confidence
+      FROM buyers b
+      LEFT JOIN entities e ON b.entity_id = e.id
       LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
-      WHERE o.id = ${orgId}
+      WHERE b.id = ${buyerId}
     `));
 
-    if (orgRes.rows.length === 0) {
-      return NextResponse.json({ error: "Organisation not found" }, { status: 404 });
+    if (buyerRes.rows.length === 0) {
+      return NextResponse.json({ error: "Buyer not found" }, { status: 404 });
     }
 
-    const organisation = orgRes.rows[0] as any;
+    const buyer = buyerRes.rows[0] as any;
 
     // Get summary stats
     const summaryRes = await db.execute(sql.raw(`
       SELECT 
         COALESCE(SUM(se.amount), 0) as total_spend,
         COUNT(*) as transaction_count,
-        COUNT(DISTINCT se.supplier) as supplier_count,
+        COUNT(DISTINCT se.raw_supplier) as supplier_count,
         MIN(se.payment_date) as earliest_date,
         MAX(se.payment_date) as latest_date
       FROM spend_entries se
-      WHERE se.organisation_id = ${orgId}
+      WHERE se.buyer_id = ${buyerId}
       ${dateFilter}
       ${supplierFilter}
     `));
@@ -92,7 +95,7 @@ export async function GET(
         COUNT(*) as transaction_count
       FROM spend_entries se
       JOIN suppliers s ON s.id = se.supplier_id
-      WHERE se.organisation_id = ${orgId}
+      WHERE se.buyer_id = ${buyerId}
       ${dateFilter}
       ${supplierFilter}
       GROUP BY s.id, s.name
@@ -107,7 +110,7 @@ export async function GET(
         SUM(se.amount) as total_spend,
         COUNT(*) as transaction_count
       FROM spend_entries se
-      WHERE se.organisation_id = ${orgId}
+      WHERE se.buyer_id = ${buyerId}
       ${dateFilter}
       ${supplierFilter}
       GROUP BY DATE_TRUNC('month', se.payment_date)
@@ -125,7 +128,7 @@ export async function GET(
         se.payment_date
       FROM spend_entries se
       JOIN suppliers s ON s.id = se.supplier_id
-      WHERE se.organisation_id = ${orgId}
+      WHERE se.buyer_id = ${buyerId}
       ${dateFilter}
       ${supplierFilter}
       ORDER BY se.amount DESC
@@ -142,7 +145,7 @@ export async function GET(
         se.payment_date
       FROM spend_entries se
       JOIN suppliers s ON s.id = se.supplier_id
-      WHERE se.organisation_id = ${orgId}
+      WHERE se.buyer_id = ${buyerId}
       ${dateFilter}
       ${supplierFilter}
       ${supplierNameFilter}
@@ -154,7 +157,7 @@ export async function GET(
     const countRes = await db.execute(sql.raw(`
       SELECT COUNT(*) as count
       FROM spend_entries se
-      WHERE se.organisation_id = ${orgId}
+      WHERE se.buyer_id = ${buyerId}
       ${dateFilter}
       ${supplierFilter}
       ${supplierNameFilter}
@@ -163,15 +166,18 @@ export async function GET(
     const totalCount = parseInt((countRes.rows[0] as any).count) || 0;
 
     return NextResponse.json({
-      organisation: {
-        id: organisation.id,
-        name: organisation.name,
-        trustType: organisation.trust_type,
-        odsCode: organisation.ods_code,
-        postCode: organisation.post_code,
-        icbOdsCode: organisation.icb_ods_code,
-        latitude: organisation.latitude,
-        longitude: organisation.longitude,
+      buyer: {
+        id: buyer.id,
+        name: buyer.buyer_name,
+        entityName: buyer.entity_name,
+        trustType: buyer.trust_type,
+        odsCode: buyer.ods_code,
+        postCode: buyer.post_code,
+        icbOdsCode: buyer.icb_ods_code,
+        latitude: buyer.latitude,
+        longitude: buyer.longitude,
+        matchStatus: buyer.match_status,
+        matchConfidence: buyer.match_confidence,
       },
       summary: {
         totalSpend: parseFloat(summary.total_spend) || 0,
@@ -201,9 +207,9 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Error fetching organisation:", error);
+    console.error("Error fetching buyer:", error);
     return NextResponse.json(
-      { error: "Failed to fetch organisation data" },
+      { error: "Failed to fetch buyer data" },
       { status: 500 }
     );
   }

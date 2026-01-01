@@ -41,6 +41,11 @@ export const entities = pgTable(
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
 
+    // AI Summary
+    aiSummary: text("ai_summary"),
+    aiNews: jsonb("ai_news").$type<{ title: string; link: string }[]>(),
+    aiSummaryUpdatedAt: timestamp("ai_summary_updated_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -225,21 +230,28 @@ export const suppliers = pgTable(
 );
 
 // =============================================================================
-// Organisations (Buyers)
+// Buyers
 // =============================================================================
 
 /**
- * Organisations table - now links to entities and only stores buyer-specific metadata
+ * Buyers table - mirrors suppliers pattern with matching workflow
  */
-export const organisations = pgTable(
-  "organisations",
+export const buyers = pgTable(
+  "buyers",
   {
     id: serial("id").primaryKey(),
+    name: text("name").notNull(),
     entityId: integer("entity_id").references(() => entities.id, {
       onDelete: "set null",
     }),
 
-    // Buyer-specific metadata (not entity attributes)
+    // Matching workflow (mirrors suppliers)
+    matchStatus: text("match_status").notNull().default("pending"), // 'matched' | 'no_match' | 'skipped' | 'pending' | 'pending_review'
+    matchConfidence: numeric("match_confidence", { precision: 5, scale: 2 }),
+    matchAttemptedAt: timestamp("match_attempted_at", { withTimezone: true }),
+    manuallyVerified: boolean("manually_verified").default(false),
+
+    // Buyer-specific metadata
     officialWebsite: text("official_website"),
     spendingDataUrl: text("spending_data_url"),
     missingDataNote: text("missing_data_note"),
@@ -248,9 +260,14 @@ export const organisations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (org) => ({
-    entityIdIdx: uniqueIndex("organisations_entity_unique").on(org.entityId),
+  (buyer) => ({
+    nameIdx: uniqueIndex("buyers_name_unique").on(buyer.name),
+    entityIdIdx: index("buyers_entity_idx").on(buyer.entityId),
+    statusIdx: index("buyers_status_idx").on(buyer.matchStatus),
   })
 );
 
@@ -288,13 +305,14 @@ export const spendEntries = pgTable(
     assetId: integer("asset_id")
       .references(() => pipelineAssets.id, { onDelete: "restrict" })
       .notNull(),
-    organisationId: integer("organisation_id")
-      .references(() => organisations.id, { onDelete: "cascade" })
+    rawBuyer: text("raw_buyer").notNull(),
+    buyerId: integer("buyer_id")
+      .references(() => buyers.id, { onDelete: "cascade" })
       .notNull(),
     rawSupplier: text("raw_supplier").notNull(),
     supplierId: integer("supplier_id").references(() => suppliers.id, {
       onDelete: "cascade",
-    }), // Nullable during migration
+    }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     paymentDate: date("payment_date").notNull(),
     rawAmount: text("raw_amount"),
@@ -306,8 +324,8 @@ export const spendEntries = pgTable(
       .notNull(),
   },
   (entry) => ({
-    organisationDateIdx: index("spend_entries_org_payment_idx").on(
-      entry.organisationId,
+    buyerDateIdx: index("spend_entries_buyer_payment_idx").on(
+      entry.buyerId,
       entry.paymentDate
     ),
     supplierIdx: index("spend_entries_supplier_idx").on(entry.supplierId),
@@ -508,8 +526,8 @@ export type Council = typeof councils.$inferSelect;
 export type NewCouncil = typeof councils.$inferInsert;
 export type GovernmentDepartment = typeof governmentDepartments.$inferSelect;
 export type NewGovernmentDepartment = typeof governmentDepartments.$inferInsert;
-export type Organisation = typeof organisations.$inferSelect;
-export type NewOrganisation = typeof organisations.$inferInsert;
+export type Buyer = typeof buyers.$inferSelect;
+export type NewBuyer = typeof buyers.$inferInsert;
 export type SpendEntry = typeof spendEntries.$inferSelect;
 export type NewSpendEntry = typeof spendEntries.$inferInsert;
 export type Supplier = typeof suppliers.$inferSelect;

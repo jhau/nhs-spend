@@ -51,7 +51,7 @@ async function main() {
     `);
 
     // Get sample data for context
-    const orgSample = await client.query(`SELECT * FROM organisations LIMIT 3`);
+    const orgSample = await client.query(`SELECT * FROM buyers LIMIT 3`);
     const spendSample = await client.query(`SELECT * FROM spend_entries LIMIT 3`);
 
     // Build markdown output
@@ -102,7 +102,7 @@ Generated: ${new Date().toISOString()}
       output += `- \`${fk.table_name}.${fk.column_name}\` → \`${fk.foreign_table_name}.${fk.foreign_column_name}\`\n`;
     }
 
-    output += `\n## Sample Data\n\n### organisations (sample)\n\n\`\`\`json\n${JSON.stringify(orgSample.rows, null, 2)}\n\`\`\`\n`;
+    output += `\n## Sample Data\n\n### buyers (sample)\n\n\`\`\`json\n${JSON.stringify(orgSample.rows, null, 2)}\n\`\`\`\n`;
     output += `\n### spend_entries (sample)\n\n\`\`\`json\n${JSON.stringify(spendSample.rows, null, 2)}\n\`\`\`\n`;
 
     fs.writeFileSync("DATABASE_SCHEMA.md", output);
