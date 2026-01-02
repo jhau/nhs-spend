@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { CompaniesHouseSearch } from "@/components/CompaniesHouseSearch";
+import { EntityLinker } from "@/components/EntityLinker";
 
 interface Summary {
   totalSpend: number;
@@ -356,9 +356,9 @@ export default function SupplierPage() {
                   <span style={styles.badge}>{linkedCompany.address}</span>
                 )}
                 {supplierId && (
-                  <CompaniesHouseSearch
-                    supplierName={supplierName}
-                    supplierId={supplierId}
+                  <EntityLinker
+                    entityName={supplierName}
+                    entityId={supplierId}
                     onLinked={() => {
                       fetchData();
                       fetchContracts();
@@ -372,14 +372,14 @@ export default function SupplierPage() {
               <div style={styles.meta}>
                 <span style={styles.noLinkText}>No Companies House link</span>
                 {supplierId && (
-                  <CompaniesHouseSearch
-                    supplierName={supplierName}
-                    supplierId={supplierId}
+                  <EntityLinker
+                    entityName={supplierName}
+                    entityId={supplierId}
                     onLinked={() => {
                       fetchData();
                       fetchContracts();
                     }}
-                    buttonText="Search Companies House"
+                    buttonText="Search and Link Entity"
                     buttonVariant="default"
                   />
                 )}

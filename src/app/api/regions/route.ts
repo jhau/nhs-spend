@@ -33,6 +33,15 @@ export async function GET(request: Request) {
   const startDate = searchParams.get("startDate") || "";
   const endDate = searchParams.get("endDate") || "";
   const selectedRegion = searchParams.get("region") || "";
+  const orgType = searchParams.get("orgType") || "";
+
+  // Build type filter SQL
+  let typeFilter = "";
+  if (orgType === "nhs") {
+    typeFilter = `AND (e.entity_type LIKE 'nhs_%' OR nhs.entity_id IS NOT NULL)`;
+  } else if (orgType === "council") {
+    typeFilter = `AND e.entity_type = 'council'`;
+  }
 
   const dateFilter = startDate && endDate
     ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'`
@@ -57,6 +66,7 @@ export async function GET(request: Request) {
       LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
       LEFT JOIN spend_entries se ON b.id = se.buyer_id ${dateFilter ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'` : ""}
       WHERE e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
+      ${typeFilter}
       GROUP BY b.id, e.name, nhs.org_sub_type, nhs.ods_code, nhs.parent_ods_code, e.latitude, e.longitude
       HAVING COALESCE(SUM(se.amount), 0) > 0
     `));
@@ -196,7 +206,9 @@ export async function GET(request: Request) {
         FROM spend_entries se
         JOIN buyers b ON b.id = se.buyer_id
         JOIN entities e ON b.entity_id = e.id
+        LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
         WHERE e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
+        ${typeFilter}
         ${dateFilter}
         GROUP BY se.raw_supplier
         ORDER BY total_spend DESC

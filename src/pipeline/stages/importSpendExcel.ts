@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull, not, like, sql } from "drizzle-orm";
 import { read, utils, type WorkBook } from "xlsx";
 
 import type { DbClient } from "@/db";
@@ -18,6 +18,7 @@ import type {
   PipelineLogLevel,
   PipelineStage,
 } from "../types";
+import { searchNhsOrganisation } from "@/lib/nhs-api";
 
 export type ImportSpendExcelInput = {
   /**
@@ -239,6 +240,12 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       },
     });
 
+    await ctx.log({
+      level: "info",
+      message: `Enriching ODS codes for discovered organisations`,
+    });
+    await enrichOdsCodes(metadataMap, discoveredTrusts, ctx);
+
     if (ctx.dryRun) {
       await ctx.log({
         level: "info",
@@ -278,10 +285,8 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
         await tx.delete(spendEntries);
         await tx.delete(buyers);
         await tx.delete(nhsOrganisations);
-        // Only delete NHS-type entities (preserve company entities)
-        await tx.delete(entities).where(
-          eq(entities.entityType, "nhs_trust")
-        );
+        // Delete all NHS-type entities (trusts, icbs, practices, etc.)
+        await tx.delete(entities).where(like(entities.entityType, "nhs_%"));
         await ctx.log({
           level: "warn",
           message: "Truncated all spend entries, buyers, and NHS entities",
@@ -511,7 +516,7 @@ async function parseTrustMetadata(
     }
 
     const name = cleanString(row[nameIndex]);
-    if (!name || name.toLowerCase() === "trust name") {
+    if (!name || name.toLowerCase() === "trust name" || isNumeric(name)) {
       skippedCount++;
       continue;
     }
@@ -598,7 +603,11 @@ async function gatherNames(
 
       // Trust name is in column 0
       const trustNameRaw = cleanString(row[0]);
-      if (trustNameRaw && !isHeaderTrustLabel(trustNameRaw)) {
+      if (
+        trustNameRaw &&
+        !isHeaderTrustLabel(trustNameRaw) &&
+        !isNumeric(trustNameRaw)
+      ) {
         const key = normaliseTrustName(trustNameRaw);
         if (!discoveredTrusts.has(key)) {
           const metadataName = metadataMap.get(key)?.name ?? trustNameRaw;
@@ -609,7 +618,11 @@ async function gatherNames(
 
       // Supplier name is in column 2
       const supplierNameRaw = cleanString(row[2]);
-      if (supplierNameRaw && !discoveredSuppliers.has(supplierNameRaw)) {
+      if (
+        supplierNameRaw &&
+        !isNumeric(supplierNameRaw) &&
+        !discoveredSuppliers.has(supplierNameRaw)
+      ) {
         discoveredSuppliers.add(supplierNameRaw);
         supplierCountInSheet++;
       }
@@ -701,7 +714,7 @@ async function syncBuyers(
     level: "debug",
     message: "Loading existing buyers from database",
   });
-  
+
   // Load existing buyers with their linked entities
   const existing = await client
     .select({
@@ -709,21 +722,24 @@ async function syncBuyers(
       name: buyers.name,
       entityId: buyers.entityId,
       entityName: entities.name,
+      registryId: entities.registryId,
     })
     .from(buyers)
     .leftJoin(entities, eq(buyers.entityId, entities.id));
-  
+
   const idByKey = new Map<string, number>();
   const entityIdByBuyerId = new Map<number, number | null>();
-  
+  const registryIdByBuyerId = new Map<number, string | null>();
+
   for (const row of existing) {
     // Use buyer name for lookup key
     if (row.name) {
       idByKey.set(normaliseTrustName(row.name), row.id);
     }
     entityIdByBuyerId.set(row.id, row.entityId);
+    registryIdByBuyerId.set(row.id, row.registryId);
   }
-  
+
   await ctx.log({
     level: "debug",
     message: "Loaded existing buyers",
@@ -738,16 +754,26 @@ async function syncBuyers(
     message: "Syncing buyers with metadata",
     meta: { metadataCount: metadataMap.size },
   });
-  
+
   for (const [key, metadata] of metadataMap) {
     const existingBuyerId = idByKey.get(key);
 
     if (existingBuyerId) {
       // Update existing - get the entity ID
       const existingEntityId = entityIdByBuyerId.get(existingBuyerId);
-      
-      if (existingEntityId) {
-        // Update entity
+      const existingRegistryId = registryIdByBuyerId.get(existingBuyerId);
+
+      // Determine correct entity ID based on current ODS code
+      const correctEntityId = await createNhsOrganisationEntity(
+        client,
+        metadata
+      );
+
+      if (correctEntityId) {
+        // We have a valid ODS match
+        const orgType = determineOrgType(metadata.name, metadata.trustType);
+
+        // Update entity details
         await client
           .update(entities)
           .set({
@@ -755,22 +781,45 @@ async function syncBuyers(
             postalCode: metadata.postCode ?? null,
             updatedAt: new Date(),
           })
-          .where(eq(entities.id, existingEntityId));
-        
+          .where(eq(entities.id, correctEntityId));
+
         // Update NHS organisation details
         await client
           .update(nhsOrganisations)
           .set({
-            odsCode: metadata.odsCode ?? "",
+            odsCode: metadata.odsCode!,
+            orgType: orgType === "practice" ? "gp_practice" : orgType,
             orgSubType: metadata.trustType ?? null,
           })
-          .where(eq(nhsOrganisations.entityId, existingEntityId));
-        
-        // Update buyer metadata
+          .where(eq(nhsOrganisations.entityId, correctEntityId));
+
+        // Update buyer to point to this correct entity
         await client
           .update(buyers)
           .set({
             name: metadata.name,
+            entityId: correctEntityId,
+            matchStatus: "matched",
+            matchConfidence: "1.00",
+            matchAttemptedAt: new Date(),
+            officialWebsite: metadata.officialWebsite ?? null,
+            spendingDataUrl: metadata.spendingDataUrl ?? null,
+            missingDataNote: metadata.missingDataNote ?? null,
+            verifiedVia: metadata.verifiedVia ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(buyers.id, existingBuyerId));
+      } else {
+        // No ODS match now. If it was previously linked, determine if we should unlink.
+        // Rule: Only link if we have an ODS code.
+        await client
+          .update(buyers)
+          .set({
+            name: metadata.name,
+            entityId: null, // Unlink if no ODS code
+            matchStatus: "no_match",
+            matchConfidence: "0.00",
+            matchAttemptedAt: new Date(),
             officialWebsite: metadata.officialWebsite ?? null,
             spendingDataUrl: metadata.spendingDataUrl ?? null,
             missingDataNote: metadata.missingDataNote ?? null,
@@ -782,15 +831,15 @@ async function syncBuyers(
       updated++;
     } else {
       // Create new entity + NHS org + buyer
-      const entityId = await createNhsTrustEntity(client, metadata);
-      
+      const entityId = await createNhsOrganisationEntity(client, metadata);
+
       const [created] = await client
         .insert(buyers)
         .values({
           name: metadata.name,
           entityId,
-          matchStatus: "matched",
-          matchConfidence: "1.00",
+          matchStatus: entityId ? "matched" : "no_match",
+          matchConfidence: entityId ? "1.00" : "0.00",
           matchAttemptedAt: new Date(),
           officialWebsite: metadata.officialWebsite ?? null,
           spendingDataUrl: metadata.spendingDataUrl ?? null,
@@ -798,7 +847,7 @@ async function syncBuyers(
           verifiedVia: metadata.verifiedVia ?? null,
         })
         .returning({ id: buyers.id });
-      
+
       idByKey.set(key, created.id);
       inserted++;
     }
@@ -809,21 +858,21 @@ async function syncBuyers(
     message: "Creating buyers without metadata",
     meta: { discoveredCount: discoveredTrusts.size },
   });
-  
+
   let createdWithoutMetadata = 0;
   for (const [key, name] of discoveredTrusts) {
     if (idByKey.has(key)) continue;
-    
+
     // Create minimal entity + NHS org + buyer
-    const entityId = await createNhsTrustEntity(client, { name });
-    
+    const entityId = await createNhsOrganisationEntity(client, { name });
+
     const [created] = await client
       .insert(buyers)
       .values({
         name,
         entityId,
-        matchStatus: "matched",
-        matchConfidence: "1.00",
+        matchStatus: entityId ? "matched" : "no_match",
+        matchConfidence: entityId ? "1.00" : "0.00",
         matchAttemptedAt: new Date(),
         officialWebsite: null,
         spendingDataUrl: null,
@@ -831,7 +880,7 @@ async function syncBuyers(
         verifiedVia: null,
       })
       .returning({ id: buyers.id });
-    
+
     idByKey.set(key, created.id);
     createdWithoutMetadata++;
   }
@@ -840,40 +889,300 @@ async function syncBuyers(
 }
 
 /**
- * Creates an entity + NHS organisation record for an NHS Trust.
- * Returns the entity ID.
+ * Determines the organisation type based on name and trust type.
  */
-async function createNhsTrustEntity(
+function determineOrgType(name: string, trustType?: string): string {
+  const upperName = name.toUpperCase();
+  if (
+    upperName.includes(" ICB") ||
+    upperName.includes("INTEGRATED CARE BOARD")
+  ) {
+    return "icb";
+  }
+  if (
+    upperName.includes(" CCG") ||
+    upperName.includes("CLINICAL COMMISSIONING GROUP")
+  ) {
+    return "ccg";
+  }
+  if (upperName.includes(" GP ") || upperName.includes(" PRACTICE")) {
+    return "practice";
+  }
+  // If trustType is provided, it's likely a trust
+  if (trustType) return "trust";
+
+  // Default to trust for now as it's the most common in this dataset
+  return "trust";
+}
+
+/**
+ * Enriches metadata and discovered trusts with ODS codes from the NHS API.
+ * Always checks local database first to avoid unnecessary API calls.
+ */
+async function enrichOdsCodes(
+  metadataMap: Map<string, TrustMetadata>,
+  discoveredTrusts: Map<string, string>,
+  ctx: PipelineContext
+): Promise<void> {
+  const db = ctx.db;
+
+  // Local cache for the duration of this run only (to avoid re-searching names that appear multiple times in the same workbook)
+  const runCache = new Map<
+    string,
+    { odsCode: string; postCode: string | null }
+  >();
+
+  const itemsToProcess: {
+    name: string;
+    key: string;
+    metadata?: TrustMetadata;
+  }[] = [];
+
+  // Identify all organisations that need processing
+  for (const [key, metadata] of metadataMap) {
+    if (!metadata.odsCode || metadata.odsCode.startsWith("UNKNOWN")) {
+      itemsToProcess.push({ name: metadata.name, key, metadata });
+    }
+  }
+
+  for (const [key, name] of discoveredTrusts) {
+    if (!metadataMap.has(key)) {
+      itemsToProcess.push({ name, key });
+    }
+  }
+
+  const totalToProcess = itemsToProcess.length;
+  if (totalToProcess > 0) {
+    await ctx.log({
+      level: "info",
+      message: `ODS ENRICHMENT: Found ${totalToProcess} organisations needing ODS lookup`,
+    });
+  }
+
+  // Helper to process a single name
+  const processName = async (
+    name: string,
+    key: string,
+    remaining: number,
+    currentMetadata?: TrustMetadata
+  ) => {
+    // 1. Check run-time cache first
+    const cached = runCache.get(key);
+    if (cached) {
+      if (currentMetadata) {
+        currentMetadata.odsCode = cached.odsCode;
+        if (!currentMetadata.postCode)
+          currentMetadata.postCode = cached.postCode ?? undefined;
+      } else {
+        metadataMap.set(key, {
+          name,
+          odsCode: cached.odsCode,
+          postCode: cached.postCode ?? undefined,
+        });
+      }
+      return;
+    }
+
+    // 2. Check database directly
+    const existing = await db
+      .select({
+        odsCode: nhsOrganisations.odsCode,
+        postCode: entities.postalCode,
+      })
+      .from(nhsOrganisations)
+      .innerJoin(entities, eq(nhsOrganisations.entityId, entities.id))
+      .where(
+        and(
+          eq(sql`UPPER(${entities.name})`, key),
+          isNotNull(nhsOrganisations.odsCode),
+          not(like(nhsOrganisations.odsCode, "UNKNOWN%"))
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      const { odsCode, postCode } = existing[0];
+      if (currentMetadata) {
+        currentMetadata.odsCode = odsCode;
+        if (!currentMetadata.postCode)
+          currentMetadata.postCode = postCode ?? undefined;
+      } else {
+        metadataMap.set(key, {
+          name,
+          odsCode,
+          postCode: postCode ?? undefined,
+        });
+      }
+      // Cache for this run
+      runCache.set(key, { odsCode, postCode });
+      return;
+    }
+
+    // 3. Not in DB, hit NHS API
+    await ctx.log({
+      level: "info",
+      message: `ODS SEARCH (${remaining} remaining): Initiating NHS API request for organisation: "${name}"`,
+      meta: { name, key },
+    });
+
+    const startTime = Date.now();
+    const results = await searchNhsOrganisation(name);
+    const duration = Date.now() - startTime;
+
+    if (results.length > 0) {
+      const orgType = determineOrgType(name, currentMetadata?.trustType);
+
+      // Prioritize exact name matches or correct roles
+      const upperName = name.toUpperCase();
+      let match = results.find((r) => r.Name.toUpperCase() === upperName);
+
+      if (!match) {
+        if (orgType === "icb") {
+          match =
+            results.find((r) => r.PrimaryRoleId === "RO261") || results[0];
+        } else if (orgType === "trust") {
+          match =
+            results.find(
+              (r) => r.PrimaryRoleId === "RO197" || r.PrimaryRoleId === "RO57"
+            ) || results[0];
+        } else {
+          match = results[0];
+        }
+      }
+
+      const odsCode = match.OrgId;
+      const postCode = match.PostCode;
+
+      if (currentMetadata) {
+        currentMetadata.odsCode = odsCode;
+        if (!currentMetadata.postCode) currentMetadata.postCode = postCode;
+      } else {
+        metadataMap.set(key, {
+          name,
+          odsCode,
+          postCode,
+        });
+      }
+
+      // Add to run cache
+      runCache.set(key, { odsCode, postCode });
+
+      // Save each ODS code as it is matched to prevent progress loss
+      if (!ctx.dryRun) {
+        try {
+          await createNhsOrganisationEntity(db, {
+            name,
+            odsCode,
+            postCode: postCode || undefined,
+            trustType: currentMetadata?.trustType,
+          });
+        } catch (error) {
+          await ctx.log({
+            level: "warn",
+            message: `Failed to persist ODS match for "${name}" to database`,
+            meta: {
+              name,
+              odsCode,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+      }
+
+      await ctx.log({
+        level: "info",
+        message: `ODS MATCH: Found ODS code for "${name}"`,
+        meta: {
+          name,
+          odsCode,
+          role: match.PrimaryRoleDescription,
+          durationMs: duration,
+          totalResults: results.length,
+        },
+      });
+    } else {
+      await ctx.log({
+        level: "warn",
+        message: `ODS MISS: No active organisation found for "${name}"`,
+        meta: { name, durationMs: duration },
+      });
+    }
+
+    // Rate limit: 500ms between API calls
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  };
+
+  // Process all items
+  for (let i = 0; i < itemsToProcess.length; i++) {
+    const { name, key, metadata } = itemsToProcess[i];
+    await processName(name, key, itemsToProcess.length - i, metadata);
+  }
+}
+
+/**
+ * Creates an entity + NHS organisation record for an NHS Trust.
+ * Returns the entity ID, or null if no ODS code is provided.
+ */
+async function createNhsOrganisationEntity(
   client: any,
   metadata: Partial<TrustMetadata> & { name: string }
-): Promise<number> {
-  // Use ODS code as registry_id if available, otherwise generate a placeholder
-  const registryId = metadata.odsCode || `UNKNOWN_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  
-  // Create entity
+): Promise<number | null> {
+  if (!metadata.odsCode || metadata.odsCode.startsWith("UNKNOWN")) {
+    return null;
+  }
+
+  const orgType = determineOrgType(metadata.name, metadata.trustType);
+  const entityType = `nhs_${orgType}`;
+  const registryId = metadata.odsCode;
+
+  // 1. Check if an entity with this type + registry ID already exists (in case multiple names map to same ODS)
+  const existingByRegistry = await client
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.entityType, entityType),
+        eq(entities.registryId, registryId)
+      )
+    )
+    .limit(1);
+
+  if (existingByRegistry.length > 0) {
+    return existingByRegistry[0].id;
+  }
+
+  // 2. Create entity
   const [newEntity] = await client
     .insert(entities)
     .values({
-      entityType: "nhs_trust",
+      entityType,
       registryId,
       name: metadata.name,
       status: "active",
       postalCode: metadata.postCode ?? null,
     })
     .returning({ id: entities.id });
-  
-  // Create NHS organisation details
-  await client.insert(nhsOrganisations).values({
-    entityId: newEntity.id,
-    odsCode: metadata.odsCode ?? registryId,
-    orgType: "trust",
-    orgSubType: metadata.trustType ?? null,
-    isActive: true,
-  });
-  
+
+  // 3. Create NHS organisation details
+  // Check if nhs_organisations record exists for this entity (shouldn't if new, but safety first)
+  const existingNhsOrg = await client
+    .select({ entityId: nhsOrganisations.entityId })
+    .from(nhsOrganisations)
+    .where(eq(nhsOrganisations.entityId, newEntity.id))
+    .limit(1);
+
+  if (existingNhsOrg.length === 0) {
+    await client.insert(nhsOrganisations).values({
+      entityId: newEntity.id,
+      odsCode: registryId,
+      orgType: orgType === "practice" ? "gp_practice" : orgType,
+      orgSubType: metadata.trustType ?? null,
+      isActive: true,
+    });
+  }
+
   return newEntity.id;
 }
-
 
 async function importSpendSheets(
   client: any,
@@ -968,10 +1277,12 @@ async function importSpendSheets(
       if (!Array.isArray(row)) continue;
 
       const buyerNameRaw = cleanString(row[0]);
-      if (!buyerNameRaw) {
+      if (!buyerNameRaw || isNumeric(buyerNameRaw)) {
         paymentsSkipped++;
         sheetPaymentsSkipped++;
-        const reason = "missing buyer name";
+        const reason = !buyerNameRaw
+          ? "missing buyer name"
+          : "numeric buyer name";
         skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
         skippedRows.push({
           runId: ctx.runId,
@@ -1008,10 +1319,10 @@ async function importSpendSheets(
       }
 
       const supplier = cleanString(row[2]);
-      if (!supplier) {
+      if (!supplier || isNumeric(supplier)) {
         paymentsSkipped++;
         sheetPaymentsSkipped++;
-        const reason = "missing supplier";
+        const reason = !supplier ? "missing supplier" : "numeric supplier name";
         skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
         skippedRows.push({
           runId: ctx.runId,
@@ -1258,6 +1569,11 @@ function formatExcelSerial(serial: number): string | null {
   const date = new Date(epoch + millis);
   if (Number.isNaN(date.valueOf())) return null;
   return formatDate(date);
+}
+
+function isNumeric(value: string): boolean {
+  // Catch integers, decimals, and scientific notation
+  return /^-?\d*\.?\d+(?:[eE][-+]?\d+)?$/.test(value);
 }
 
 function pad(value: number): string {

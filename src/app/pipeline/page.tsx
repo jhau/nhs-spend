@@ -79,6 +79,7 @@ export default function PipelinePage() {
     "nhs" | "council" | "government_department"
   >("nhs");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [runId, setRunId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +261,7 @@ export default function PipelinePage() {
     setRunId(null);
     setAssetId(null);
     setDuplicateWarning(null);
+    setUploadProgress(0);
 
     try {
       // Calculate checksum first
@@ -285,6 +287,7 @@ export default function PipelinePage() {
       ) {
         // Duplicate checksum detected - show warning
         setUploading(false);
+        setUploadProgress(null);
         setDuplicateWarning({
           checksum,
           duplicateAssets: presignData.duplicateAssets || [],
@@ -298,21 +301,45 @@ export default function PipelinePage() {
         );
       }
 
-      const putResp = await fetch(presignData.uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: file.type ? { "Content-Type": file.type } : undefined,
-      });
-      if (!putResp.ok) {
-        throw new Error(`Upload failed (${putResp.status})`);
-      }
+      // Use XMLHttpRequest for progress tracking
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", presignData.uploadUrl);
+        if (file.type) {
+          xhr.setRequestHeader("Content-Type", file.type);
+        }
 
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round(
+              (event.loaded / event.total) * 100
+            );
+            setUploadProgress(percentComplete);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Upload failed (${xhr.status})`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.send(file);
+      });
+
+      setUploadProgress(100);
       setAssetId(presignData.assetId);
       await refreshRuns();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setUploadProgress(null);
     } finally {
       setUploading(false);
+      // Keep progress at 100% for a moment then clear
+      setTimeout(() => setUploadProgress(null), 1000);
     }
   }
 
@@ -530,20 +557,41 @@ export default function PipelinePage() {
             <Button disabled={!canUpload} onClick={() => void uploadSelected()}>
               <Upload className="size-4" />
               {calculatingChecksum
-                ? `Calculating checksum... ${
+                ? `Calculating... ${
                     checksumProgress !== null ? `${checksumProgress}%` : ""
                   }`
                 : uploading
-                ? "Uploading…"
+                ? `Uploading... ${
+                    uploadProgress !== null ? `${uploadProgress}%` : ""
+                  }`
                 : "Upload"}
             </Button>
 
             {calculatingChecksum && checksumProgress !== null && (
-              <div className="flex-1 min-w-[200px] max-w-xs">
+              <div className="flex-1 min-w-[200px] max-w-xs space-y-1">
+                <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-medium">
+                  <span>Checksum</span>
+                  <span>{checksumProgress}%</span>
+                </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary transition-all duration-300"
                     style={{ width: `${checksumProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {uploading && uploadProgress !== null && (
+              <div className="flex-1 min-w-[200px] max-w-xs space-y-1">
+                <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-medium">
+                  <span>Uploading</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
               </div>

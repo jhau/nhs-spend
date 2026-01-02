@@ -1,12 +1,12 @@
 import { getBuyersData } from "@/lib/data/buyers";
-import RegionalActivity from "./RegionalActivity";
+import RegionalActivity from "../RegionalActivity";
 import { EntityLinker } from "@/components/EntityLinker";
 import Link from "next/link";
-import { BuyerSearch } from "./BuyerSearch";
-import { BuyerDateRange } from "./BuyerDateRange";
+import { BuyerSearch } from "../BuyerSearch";
+import { BuyerDateRange } from "../BuyerDateRange";
 import { getDefaultDateRange } from "@/lib/utils";
-import { BuyerTabs } from "./BuyerTabs";
-import { BuyerPagination } from "./BuyerPagination";
+import { BuyerTabs } from "../BuyerTabs";
+import { BuyerPagination } from "../BuyerPagination";
 
 interface Buyer {
   id: number;
@@ -18,6 +18,12 @@ interface Buyer {
   total_spend: string;
   supplier_count: number;
   top_supplier: string | null;
+}
+
+interface Summary {
+  totalBuyers: number;
+  activeLast90Days: number;
+  totalSpend: number;
 }
 
 function formatCurrency(amount: number): string {
@@ -37,7 +43,7 @@ function formatNumber(num: number): string {
   return num.toLocaleString("en-GB");
 }
 
-export default async function BuyersPage({
+export default async function NHSBuyersPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -56,6 +62,7 @@ export default async function BuyersPage({
   const { buyers, parentOrganisations, summary, pagination } = await getBuyersData({
     page: currentPage,
     limit: 20,
+    orgType: "nhs",
     search,
     startDate,
     endDate,
@@ -65,7 +72,7 @@ export default async function BuyersPage({
     <div style={styles.container}>
       {/* Header */}
       <div style={styles.header}>
-        <h1 style={styles.title}>Spend Data - Buyers</h1>
+        <h1 style={styles.title}>NHS Spend Data - Buyers</h1>
         <div style={styles.headerRow}>
           <BuyerTabs />
           <BuyerDateRange />
@@ -78,13 +85,14 @@ export default async function BuyersPage({
           startDate={startDate} 
           endDate={endDate} 
           initialRegion={regionParam}
+          orgType="nhs"
         />
       ) : (
         <>
           {/* Parent Organisations - National/Regional Bodies */}
           {parentOrganisations.length > 0 && (
             <div style={styles.parentOrgsSection}>
-              <h2 style={styles.sectionTitle}>National Bodies</h2>
+              <h2 style={styles.sectionTitle}>National NHS Bodies</h2>
               <div style={styles.parentOrgsGrid}>
                 {parentOrganisations.map((org: any) => (
                   <div key={org.id} style={styles.parentOrgCard}>
@@ -103,11 +111,11 @@ export default async function BuyersPage({
 
           {/* Summary Cards */}
           <div style={styles.summarySection}>
-            <h2 style={styles.sectionTitle}>Sub-Organisations Overview</h2>
+            <h2 style={styles.sectionTitle}>NHS Sub-Organisations Overview</h2>
             <div style={styles.summaryGrid}>
               <SummaryCard
                 value={formatNumber(summary.totalBuyers)}
-                label="Total sub-organisations"
+                label="Total NHS organisations"
               />
               <SummaryCard
                 value={formatNumber(summary.activeLast90Days)}
@@ -133,7 +141,7 @@ export default async function BuyersPage({
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Buyer</th>
+                  <th style={styles.th}>NHS Buyer</th>
                   <th style={styles.th}>ODS Code</th>
                   <th style={styles.th}>Linked Entity</th>
                   <th style={styles.th}>Type</th>
@@ -146,7 +154,7 @@ export default async function BuyersPage({
                 {buyers.length === 0 ? (
                   <tr>
                     <td colSpan={7} style={styles.emptyCell}>
-                      No buyers found
+                      No NHS buyers found
                     </td>
                   </tr>
                 ) : (

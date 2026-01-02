@@ -1,6 +1,63 @@
-import { entities, companies, councils, governmentDepartments } from "@/db/schema";
+import { entities, companies, councils, governmentDepartments, nhsOrganisations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { GovUkOrganisation } from "./gov-uk";
+import type { OdsOrganisation } from "./nhs-api";
+
+/**
+ * Helper to find or create an entity and NHS organisation record for an NHS Trust.
+ * Returns the entity ID, or null if no ODS code is provided.
+ */
+export async function findOrCreateNhsTrustEntity(
+  db: any,
+  metadata: Partial<OdsOrganisation> & { Name: string }
+): Promise<number | null> {
+  if (!metadata.OrgId) {
+    return null;
+  }
+
+  const registryId = metadata.OrgId;
+  
+  // Check if entity already exists by registry_id
+  const existingEntity = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.entityType, "nhs_trust"),
+        eq(entities.registryId, registryId)
+      )
+    )
+    .limit(1);
+
+  if (existingEntity.length > 0) {
+    return existingEntity[0].id;
+  }
+
+  // Create entity
+  const [newEntity] = await db
+    .insert(entities)
+    .values({
+      entityType: "nhs_trust",
+      registryId,
+      name: metadata.Name,
+      status: "active",
+      postalCode: metadata.PostCode ?? null,
+    })
+    .returning({ id: entities.id });
+  
+  // Create NHS organisation details
+  await db.insert(nhsOrganisations).values({
+    entityId: newEntity.id,
+    odsCode: registryId,
+    orgType: "trust",
+    orgSubType: metadata.PrimaryRoleDescription ?? null,
+    isActive: true,
+    rawData: metadata,
+    fetchedAt: new Date(),
+  });
+  
+  return newEntity.id;
+}
 
 /**
  * Helper to find or create an entity and company record from a Companies House profile.

@@ -47,6 +47,7 @@ interface Props {
   endDate: string;
   initialRegion?: string | null;
   onRegionChange?: (region: string | null) => void;
+  orgType?: string;
 }
 
 // Convert URL slug to display name
@@ -121,7 +122,7 @@ function geoMatchesRegion(geoName: string, selectedRegion: string): boolean {
   return dataRegion === selectedRegion;
 }
 
-export default function RegionalActivity({ startDate, endDate, initialRegion, onRegionChange }: Props) {
+export default function RegionalActivity({ startDate, endDate, initialRegion, onRegionChange, orgType }: Props) {
   const router = useRouter();
   const [regions, setRegions] = useState<Region[]>([]);
   // Parse initial region from URL slug
@@ -160,6 +161,7 @@ export default function RegionalActivity({ startDate, endDate, initialRegion, on
       const params = new URLSearchParams({
         ...(startDate && { startDate }),
         ...(endDate && { endDate }),
+        ...(orgType && { orgType }),
       });
       const res = await fetch(`/api/regions?${params}`);
       if (!res.ok) throw new Error("Failed to fetch data");
@@ -170,7 +172,7 @@ export default function RegionalActivity({ startDate, endDate, initialRegion, on
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, orgType]);
 
   useEffect(() => {
     fetchRegions();

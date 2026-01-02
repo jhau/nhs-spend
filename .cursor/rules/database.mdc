@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+You can connect to my local postgres database at postgres://postgres:password@127.0.0.1:5432/marketint. You are only allow to read from the database, DO NOT EVER change the database under any situation.

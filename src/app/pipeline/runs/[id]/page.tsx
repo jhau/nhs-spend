@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { CompaniesHouseSearch } from "@/components/CompaniesHouseSearch";
+import { EntityLinker } from "@/components/EntityLinker";
 
 type RunDetailResponse = {
   run?: {
@@ -525,9 +525,9 @@ function SuppliersTable({
                       </span>
                     </div>
                   ) : (
-                    <CompaniesHouseSearch
-                      supplierName={s.name}
-                      supplierId={s.id}
+                    <EntityLinker
+                      entityName={s.name}
+                      entityId={s.id}
                       onLinked={onLinked}
                       buttonText="Link"
                       buttonVariant="outline"
