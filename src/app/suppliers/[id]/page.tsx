@@ -16,7 +16,7 @@ interface Summary {
 interface Buyer {
   id: number;
   name: string;
-  trustType: string | null;
+  displayType: string | null;
   totalSpend: number;
   transactionCount: number;
 }

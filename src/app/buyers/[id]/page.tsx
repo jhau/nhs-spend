@@ -7,7 +7,7 @@ import Link from "next/link";
 interface Organisation {
   id: number;
   name: string;
-  trustType: string | null;
+  displayType: string | null;
   odsCode: string | null;
   postCode: string | null;
   icbOdsCode: string | null;
@@ -220,8 +220,8 @@ export default function OrganisationPage() {
           {organisation?.icbOdsCode && (
             <span style={styles.badge}>ICB: {organisation.icbOdsCode}</span>
           )}
-          {organisation?.trustType && (
-            <span style={styles.badgeType}>{organisation.trustType}</span>
+          {organisation?.displayType && (
+            <span style={styles.badgeType}>{organisation.displayType}</span>
           )}
         </div>
       </div>

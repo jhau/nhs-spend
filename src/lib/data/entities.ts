@@ -162,7 +162,7 @@ export async function getEntities(options: {
 export interface EntityBuyer {
   id: number;
   name: string;
-  trustType: string | null;
+  displayType: string | null;
   totalSpend: number;
   transactionCount: number;
 }
@@ -329,7 +329,14 @@ export async function getEntityData(id: number, options: {
     SELECT 
       target.id,
       target.name,
-      ${view === "supplier" ? "nhs.org_sub_type as trust_type," : ""}
+      ${view === "supplier" ? `
+      CASE 
+        WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
+        WHEN e.entity_type = 'council' THEN 'Council'
+        WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
+        WHEN e.entity_type LIKE 'nhs_%' THEN 'NHS'
+        ELSE 'NHS'
+      END as display_type,` : ""}
       SUM(se.amount) as total_spend,
       COUNT(*) as transaction_count
     FROM spend_entries se
@@ -337,10 +344,11 @@ export async function getEntityData(id: number, options: {
     ${view === "supplier" ? `
     LEFT JOIN entities e ON e.id = target.entity_id
     LEFT JOIN nhs_organisations nhs ON nhs.entity_id = e.id
+    LEFT JOIN government_departments gd ON gd.entity_id = e.id
     ` : ""}
     WHERE se.${idField} IN (${idList})
     ${dateFilter}
-    GROUP BY target.id, target.name ${view === "supplier" ? ", nhs.org_sub_type" : ""}
+    GROUP BY target.id, target.name ${view === "supplier" ? ", nhs.org_sub_type, e.entity_type, gd.entity_id" : ""}
     ORDER BY total_spend DESC
     LIMIT 10
   `));
@@ -479,7 +487,7 @@ export async function getEntityData(id: number, options: {
     topCounterparts: (topCounterpartsRes.rows as any[]).map((b) => ({
       id: b.id,
       name: b.name,
-      trustType: b.trust_type || null,
+      displayType: b.display_type || null,
       totalSpend: parseFloat(b.total_spend) || 0,
       transactionCount: parseInt(b.transaction_count) || 0,
     })),

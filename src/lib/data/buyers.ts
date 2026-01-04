@@ -90,7 +90,13 @@ export async function getBuyersData(params: GetBuyersParams) {
               b.name as buyer_name,
               e.name as entity_name,
               b.entity_id,
-              nhs.org_sub_type as trust_type,
+              CASE 
+                WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
+                WHEN e.entity_type = 'council' THEN 'Council'
+                WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
+                WHEN e.entity_type LIKE 'nhs_%' THEN 'NHS'
+                ELSE 'NHS'
+              END as display_type,
               nhs.ods_code,
               COALESCE(SUM(se.amount), 0) as total_spend,
               COUNT(DISTINCT se.raw_supplier) as supplier_count
@@ -107,7 +113,7 @@ export async function getBuyersData(params: GetBuyersParams) {
             })
               AND (e.name IS NULL OR e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority'))
               ${sql.raw(typeFilter)}
-            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_sub_type, nhs.ods_code
+            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_sub_type, nhs.ods_code, e.entity_type, gd.entity_id
             HAVING COALESCE(SUM(se.amount), 0) > 0
             ORDER BY total_spend DESC
             LIMIT ${limit} OFFSET ${offset}
@@ -130,7 +136,13 @@ export async function getBuyersData(params: GetBuyersParams) {
               b.name as buyer_name,
               e.name as entity_name,
               b.entity_id,
-              nhs.org_sub_type as trust_type,
+              CASE 
+                WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
+                WHEN e.entity_type = 'council' THEN 'Council'
+                WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
+                WHEN e.entity_type LIKE 'nhs_%' THEN 'NHS'
+                ELSE 'NHS'
+              END as display_type,
               nhs.ods_code,
               COALESCE(SUM(se.amount), 0) as total_spend,
               COUNT(DISTINCT se.raw_supplier) as supplier_count
@@ -142,7 +154,7 @@ export async function getBuyersData(params: GetBuyersParams) {
             LEFT JOIN spend_entries se ON b.id = se.buyer_id ${dateFilter}
             WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER})
             ${typeFilter}
-            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_sub_type, nhs.ods_code
+            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_sub_type, nhs.ods_code, e.entity_type, gd.entity_id
             HAVING COALESCE(SUM(se.amount), 0) > 0
             ORDER BY total_spend DESC
             LIMIT ${limit} OFFSET ${offset}

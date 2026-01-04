@@ -53,7 +53,13 @@ export async function GET(
         e.postal_code as post_code,
         e.latitude,
         e.longitude,
-        nhs.org_sub_type as trust_type,
+        CASE 
+          WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
+          WHEN e.entity_type = 'council' THEN 'Council'
+          WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
+          WHEN e.entity_type LIKE 'nhs_%' THEN 'NHS'
+          ELSE 'NHS'
+        END as display_type,
         nhs.ods_code,
         nhs.parent_ods_code as icb_ods_code,
         b.match_status,
@@ -61,6 +67,7 @@ export async function GET(
       FROM buyers b
       LEFT JOIN entities e ON b.entity_id = e.id
       LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
+      LEFT JOIN government_departments gd ON e.id = gd.entity_id
       WHERE b.id = ${buyerId}
     `));
 
@@ -170,7 +177,7 @@ export async function GET(
         id: buyer.id,
         name: buyer.buyer_name,
         entityName: buyer.entity_name,
-        trustType: buyer.trust_type,
+        displayType: buyer.display_type,
         odsCode: buyer.ods_code,
         postCode: buyer.post_code,
         icbOdsCode: buyer.icb_ods_code,

@@ -63,16 +63,23 @@ export async function GET(
       SELECT 
         b.id,
         b.name,
-        nhs.org_sub_type as trust_type,
+        CASE 
+          WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
+          WHEN e.entity_type = 'council' THEN 'Council'
+          WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
+          WHEN e.entity_type LIKE 'nhs_%' THEN 'NHS'
+          ELSE 'NHS'
+        END as display_type,
         SUM(se.amount) as total_spend,
         COUNT(*) as transaction_count
       FROM spend_entries se
       JOIN buyers b ON b.id = se.buyer_id
       LEFT JOIN entities e ON e.id = b.entity_id
       LEFT JOIN nhs_organisations nhs ON nhs.entity_id = e.id
+      LEFT JOIN government_departments gd ON gd.entity_id = e.id
       WHERE se.supplier_id = ${supplierId}
       ${dateFilter}
-      GROUP BY b.id, b.name, nhs.org_sub_type
+      GROUP BY b.id, b.name, nhs.org_sub_type, e.entity_type, gd.entity_id
       ORDER BY total_spend DESC
       LIMIT 10
     `));
@@ -230,7 +237,7 @@ export async function GET(
       topBuyers: (topBuyersRes.rows as any[]).map((b) => ({
         id: b.id,
         name: b.name,
-        trustType: b.trust_type,
+        displayType: b.display_type,
         totalSpend: parseFloat(b.total_spend) || 0,
         transactionCount: parseInt(b.transaction_count) || 0,
       })),

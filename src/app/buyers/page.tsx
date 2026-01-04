@@ -11,7 +11,7 @@ interface Buyer {
   buyer_name: string;
   entity_name: string | null;
   entity_id: number | null;
-  trust_type: string | null;
+  display_type: string | null;
   ods_code: string | null;
   total_spend: string;
   supplier_count: number;
@@ -153,9 +153,7 @@ export default async function BuyersPage({
                     )}
                   </td>
                   <td style={styles.td}>
-                    <span style={styles.typeTag}>
-                      {buyer.trust_type || "NHS"}
-                    </span>
+                    <span style={styles.typeTag}>{buyer.display_type}</span>
                   </td>
                   <td
                     style={{

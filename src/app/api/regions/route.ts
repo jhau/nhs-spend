@@ -53,7 +53,13 @@ export async function GET(request: Request) {
       SELECT 
         b.id,
         e.name,
-        nhs.org_sub_type as trust_type,
+        CASE 
+          WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
+          WHEN e.entity_type = 'council' THEN 'Council'
+          WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
+          WHEN e.entity_type LIKE 'nhs_%' THEN 'NHS'
+          ELSE 'NHS'
+        END as display_type,
         nhs.ods_code,
         nhs.parent_ods_code as icb_ods_code,
         e.latitude,
@@ -64,10 +70,11 @@ export async function GET(request: Request) {
       FROM buyers b
       LEFT JOIN entities e ON b.entity_id = e.id
       LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
+      LEFT JOIN government_departments gd ON e.id = gd.entity_id
       LEFT JOIN spend_entries se ON b.id = se.buyer_id ${dateFilter ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'` : ""}
       WHERE e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority')
       ${typeFilter}
-      GROUP BY b.id, e.name, nhs.org_sub_type, nhs.ods_code, nhs.parent_ods_code, e.latitude, e.longitude
+      GROUP BY b.id, e.name, nhs.org_sub_type, nhs.ods_code, nhs.parent_ods_code, e.latitude, e.longitude, e.entity_type, gd.entity_id
       HAVING COALESCE(SUM(se.amount), 0) > 0
     `));
 
