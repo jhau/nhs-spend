@@ -1,4 +1,5 @@
 import { PipelineLogger } from "@/pipeline/types";
+import stringSimilarity from "string-similarity";
 
 export type GovUkOrganisation = {
   title: string;
@@ -120,10 +121,34 @@ export async function searchGovUkOrganisation(
       return null;
     }
 
-    // Return the first organisation from the first result
-    const firstResult = data.results[0];
-    if (firstResult.organisations && firstResult.organisations.length > 0) {
-      return firstResult.organisations[0];
+    // Filter and score results based on similarity
+    const scoredResults = data.results
+      .filter((r) => r.organisations && r.organisations.length > 0)
+      .map((r) => {
+        const org = r.organisations[0];
+        const titleSimilarity = stringSimilarity.compareTwoStrings(
+          query.toLowerCase(),
+          org.title.toLowerCase()
+        );
+        const acronymSimilarity = org.acronym
+          ? stringSimilarity.compareTwoStrings(
+              query.toLowerCase(),
+              org.acronym.toLowerCase()
+            )
+          : 0;
+
+        return {
+          org,
+          similarity: Math.max(titleSimilarity, acronymSimilarity),
+        };
+      });
+
+    scoredResults.sort((a, b) => b.similarity - a.similarity);
+    const bestMatch = scoredResults[0];
+
+    // Only return if similarity is high enough
+    if (bestMatch && bestMatch.similarity >= 0.8) {
+      return bestMatch.org;
     }
 
     return null;

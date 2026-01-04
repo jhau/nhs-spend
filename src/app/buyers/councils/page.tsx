@@ -1,10 +1,10 @@
 import { getBuyersData } from "@/lib/data/buyers";
 import { EntityLinker } from "@/components/EntityLinker";
 import Link from "next/link";
-import { BuyerSearch } from "./BuyerSearch";
-import { BuyerDateRange } from "./BuyerDateRange";
+import { BuyerSearch } from "../BuyerSearch";
+import { BuyerDateRange } from "../BuyerDateRange";
 import { getDefaultDateRange } from "@/lib/utils";
-import { BuyerPagination } from "./BuyerPagination";
+import { BuyerPagination } from "../BuyerPagination";
 
 interface Buyer {
   id: number;
@@ -16,7 +16,6 @@ interface Buyer {
   total_spend: string;
   supplier_count: number;
   top_supplier: string | null;
-  top_supplier_id: number | null;
 }
 
 function formatCurrency(amount: number): string {
@@ -36,7 +35,7 @@ function formatNumber(num: number): string {
   return num.toLocaleString("en-GB");
 }
 
-export default async function BuyersPage({
+export default async function CouncilsBuyersPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -49,9 +48,10 @@ export default async function BuyersPage({
   const startDate = (sParams.startDate as string) || defaultDates.startDate;
   const endDate = (sParams.endDate as string) || defaultDates.endDate;
 
-  const { buyers, typeStats, pagination } = await getBuyersData({
+  const { buyers, summary, pagination } = await getBuyersData({
     page: currentPage,
     limit: 20,
+    orgType: "council",
     search,
     startDate,
     endDate,
@@ -61,37 +61,28 @@ export default async function BuyersPage({
     <div style={styles.container}>
       {/* Header */}
       <div style={styles.header}>
-        <h1 style={styles.title}>Spend Data - Buyers</h1>
+        <div style={styles.breadcrumb}>
+          <Link href="/buyers" style={styles.breadcrumbLink}>Buyers</Link>
+          <span style={styles.breadcrumbSeparator}>/</span>
+          <span style={styles.breadcrumbCurrent}>Councils</span>
+        </div>
+        <h1 style={styles.title}>Council Spend Data</h1>
         <div style={styles.headerRow}>
           <BuyerDateRange />
         </div>
       </div>
 
-      {/* Type Stats Section */}
+      {/* Summary Cards */}
       <div style={styles.summarySection}>
-        <h2 style={styles.sectionTitle}>Buyer Categories</h2>
         <div style={styles.summaryGrid}>
-          {typeStats.map((stat: any) => {
-            const href =
-              stat.type === "NHS Orgs"
-                ? "/buyers/nhs"
-                : stat.type === "Government Departments"
-                ? "/buyers/gov"
-                : stat.type === "Councils"
-                ? "/buyers/councils"
-                : undefined;
-
-            return (
-              <SummaryCard
-                key={stat.type}
-                value={formatCurrency(parseFloat(stat.total_spend))}
-                label={`${stat.type} (${formatNumber(
-                  stat.buyer_count
-                )} buyers)`}
-                href={href}
-              />
-            );
-          })}
+          <SummaryCard
+            value={formatCurrency(summary.totalSpend)}
+            label="Total Spend"
+          />
+          <SummaryCard
+            value={formatNumber(summary.totalBuyers)}
+            label="Councils"
+          />
         </div>
       </div>
 
@@ -103,22 +94,18 @@ export default async function BuyersPage({
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>Buyer</th>
-              <th style={styles.th}>ODS Code</th>
+              <th style={styles.th}>Council Name</th>
               <th style={styles.th}>Linked Entity</th>
-              <th style={styles.th}>Type</th>
               <th style={{ ...styles.th, textAlign: "right" }}>Total Spend</th>
               <th style={styles.th}>Top Supplier</th>
-              <th style={{ ...styles.th, textAlign: "center" }}>
-                # of Suppliers
-              </th>
+              <th style={{ ...styles.th, textAlign: "center" }}># of Suppliers</th>
             </tr>
           </thead>
           <tbody>
             {buyers.length === 0 ? (
               <tr>
-                <td colSpan={7} style={styles.emptyCell}>
-                  No buyers found
+                <td colSpan={5} style={styles.emptyCell}>
+                  No councils found
                 </td>
               </tr>
             ) : (
@@ -130,55 +117,32 @@ export default async function BuyersPage({
                     </Link>
                   </td>
                   <td style={styles.td}>
-                    <span style={styles.odsTag}>{buyer.ods_code || "—"}</span>
-                  </td>
-                  <td style={styles.td}>
                     {buyer.entity_id ? (
-                      <Link
+                      <Link 
                         href={`/entities/${buyer.entity_id}`}
                         style={styles.entityLink}
                       >
                         {buyer.entity_name}
                       </Link>
                     ) : (
-                      <EntityLinker
+                      <EntityLinker 
                         entityName={buyer.buyer_name}
                         entityId={buyer.id}
                         entityKind="buyer"
                         buttonText="Link Entity"
                         buttonVariant="outline"
                         buttonSize="sm"
-                        initialType="nhs_trust"
+                        initialType="council"
                       />
                     )}
                   </td>
-                  <td style={styles.td}>
-                    <span style={styles.typeTag}>
-                      {buyer.trust_type || "NHS"}
-                    </span>
-                  </td>
-                  <td
-                    style={{
-                      ...styles.td,
-                      textAlign: "right",
-                      fontWeight: 600,
-                    }}
-                  >
+                  <td style={{ ...styles.td, textAlign: "right", fontWeight: 600 }}>
                     {formatCurrency(parseFloat(buyer.total_spend))}
                   </td>
                   <td style={styles.td}>
-                    {buyer.top_supplier_id ? (
-                      <Link
-                        href={`/suppliers/${buyer.top_supplier_id}`}
-                        style={styles.supplierLink}
-                      >
-                        {buyer.top_supplier || "—"}
-                      </Link>
-                    ) : (
-                      <span style={styles.supplierLink}>
-                        {buyer.top_supplier || "—"}
-                      </span>
-                    )}
+                    <span style={styles.supplierLink}>
+                      {buyer.top_supplier || "—"}
+                    </span>
                   </td>
                   <td style={{ ...styles.td, textAlign: "center" }}>
                     {buyer.supplier_count}
@@ -191,10 +155,7 @@ export default async function BuyersPage({
       </div>
 
       {/* Pagination */}
-      <BuyerPagination
-        currentPage={currentPage}
-        totalPages={pagination.totalPages}
-      />
+      <BuyerPagination currentPage={currentPage} totalPages={pagination.totalPages} />
     </div>
   );
 }
@@ -202,46 +163,14 @@ export default async function BuyersPage({
 function SummaryCard({
   value,
   label,
-  href,
-  highlight,
 }: {
   value: string;
   label: string;
-  href?: string;
-  highlight?: boolean;
 }) {
-  const content = (
-    <>
+  return (
+    <div style={styles.summaryCard}>
       <div style={styles.summaryValue}>{value}</div>
       <div style={styles.summaryLabel}>{label}</div>
-      {href && <div style={styles.viewLink}>View All &rarr;</div>}
-    </>
-  );
-
-  if (href) {
-    return (
-      <Link
-        href={href}
-        style={{
-          ...styles.summaryCard,
-          ...(highlight ? styles.summaryCardHighlight : {}),
-          textDecoration: "none",
-          display: "block",
-        }}
-      >
-        {content}
-      </Link>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        ...styles.summaryCard,
-        ...(highlight ? styles.summaryCardHighlight : {}),
-      }}
-    >
-      {content}
     </div>
   );
 }
@@ -251,29 +180,39 @@ const styles: { [key: string]: React.CSSProperties } = {
     minHeight: "100vh",
     backgroundColor: "#fafafa",
     padding: "32px 48px",
-    fontFamily:
-      "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   },
   header: {
     marginBottom: "24px",
   },
+  breadcrumb: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginBottom: "12px",
+    fontSize: "14px",
+  },
+  breadcrumbLink: {
+    color: "#666",
+    textDecoration: "none",
+  },
+  breadcrumbSeparator: {
+    color: "#ccc",
+  },
+  breadcrumbCurrent: {
+    color: "#1a1a2e",
+    fontWeight: 500,
+  },
   headerRow: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
-    flexWrap: "wrap" as const,
-    gap: "16px",
+    marginBottom: "16px",
   },
   title: {
     fontSize: "28px",
     fontWeight: 600,
     color: "#1a1a2e",
-    margin: "0 0 16px 0",
-  },
-  sectionTitle: {
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#555",
     margin: "0 0 16px 0",
   },
   summarySection: {
@@ -291,10 +230,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: "1px solid #e8e8e8",
     textAlign: "center" as const,
   },
-  summaryCardHighlight: {
-    backgroundColor: "#f8f5f0",
-    borderColor: "#e8dfd0",
-  },
   summaryValue: {
     fontSize: "36px",
     fontWeight: 600,
@@ -304,12 +239,6 @@ const styles: { [key: string]: React.CSSProperties } = {
   summaryLabel: {
     fontSize: "13px",
     color: "#888",
-  },
-  viewLink: {
-    fontSize: "12px",
-    color: "#2563eb",
-    marginTop: "12px",
-    fontWeight: 500,
   },
   tableContainer: {
     backgroundColor: "white",
@@ -349,24 +278,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     textDecoration: "underline",
     fontWeight: 500,
   },
-  typeTag: {
-    display: "inline-block",
-    padding: "4px 10px",
-    fontSize: "12px",
-    backgroundColor: "#f0f0f0",
-    borderRadius: "4px",
-    color: "#666",
-  },
-  odsTag: {
-    display: "inline-block",
-    padding: "4px 8px",
-    fontSize: "12px",
-    backgroundColor: "#f3f4f6",
-    borderRadius: "4px",
-    color: "#4b5563",
-    fontFamily: "monospace",
-    fontWeight: 500,
-  },
   supplierLink: {
     color: "#5c4d3c",
     textDecoration: "underline",
@@ -378,3 +289,4 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#888",
   },
 };
+

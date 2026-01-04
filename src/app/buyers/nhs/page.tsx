@@ -59,7 +59,7 @@ export default async function NHSBuyersPage({
   const startDate = (sParams.startDate as string) || defaultDates.startDate;
   const endDate = (sParams.endDate as string) || defaultDates.endDate;
 
-  const { buyers, parentOrganisations, summary, pagination } = await getBuyersData({
+  const { buyers, parentOrganisations, typeStats, summary, pagination } = await getBuyersData({
     page: currentPage,
     limit: 20,
     orgType: "nhs",
@@ -113,23 +113,13 @@ export default async function NHSBuyersPage({
           <div style={styles.summarySection}>
             <h2 style={styles.sectionTitle}>NHS Sub-Organisations Overview</h2>
             <div style={styles.summaryGrid}>
-              <SummaryCard
-                value={formatNumber(summary.totalBuyers)}
-                label="Total NHS organisations"
-              />
-              <SummaryCard
-                value={formatNumber(summary.activeLast90Days)}
-                label="Active last 90 days"
-              />
-              <SummaryCard
-                value={formatCurrency(summary.totalSpend)}
-                label="Total spend recorded"
-                highlight
-              />
-              <SummaryCard
-                value={formatNumber(pagination.total)}
-                label="Organisations with data"
-              />
+              {typeStats.map((stat: any) => (
+                <SummaryCard
+                  key={stat.type}
+                  value={formatCurrency(parseFloat(stat.total_spend))}
+                  label={`${stat.type} (${formatNumber(stat.buyer_count)} buyers)`}
+                />
+              ))}
             </div>
           </div>
 
