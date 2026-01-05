@@ -1,10 +1,14 @@
 import { getBuyersData } from "@/lib/data/buyers";
 import { EntityLinker } from "@/components/EntityLinker";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { BuyerSearch } from "./BuyerSearch";
 import { BuyerDateRange } from "./BuyerDateRange";
 import { getDefaultDateRange } from "@/lib/utils";
 import { BuyerPagination } from "./BuyerPagination";
+import { BuyerVerifiedFilter } from "./BuyerVerifiedFilter";
+import { Suspense } from "react";
 
 interface Buyer {
   id: number;
@@ -17,6 +21,7 @@ interface Buyer {
   supplier_count: number;
   top_supplier: string | null;
   top_supplier_id: number | null;
+  match_status: string;
 }
 
 function formatCurrency(amount: number): string {
@@ -44,6 +49,7 @@ export default async function BuyersPage({
   const sParams = await searchParams;
   const currentPage = parseInt((sParams.page as string) || "1", 10);
   const search = (sParams.search as string) || "";
+  const verified = (sParams.verified as string) || "";
 
   const defaultDates = getDefaultDateRange();
   const startDate = (sParams.startDate as string) || defaultDates.startDate;
@@ -55,6 +61,7 @@ export default async function BuyersPage({
     search,
     startDate,
     endDate,
+    verified,
   });
 
   return (
@@ -98,12 +105,21 @@ export default async function BuyersPage({
       {/* Search */}
       <BuyerSearch />
 
+      <Suspense
+        fallback={
+          <div className="h-10 mb-4 animate-pulse bg-zinc-100 rounded-lg w-64" />
+        }
+      >
+        <BuyerVerifiedFilter />
+      </Suspense>
+
       {/* Data Table */}
       <div style={styles.tableContainer}>
         <table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Buyer</th>
+              <th style={styles.th}>Status</th>
               <th style={styles.th}>ODS Code</th>
               <th style={styles.th}>Linked Entity</th>
               <th style={styles.th}>Type</th>
@@ -128,6 +144,27 @@ export default async function BuyersPage({
                     <Link href={`/buyers/${buyer.id}`} style={styles.buyerName}>
                       {buyer.buyer_name}
                     </Link>
+                  </td>
+                  <td style={styles.td}>
+                    <Badge
+                      variant={
+                        buyer.match_status === "matched"
+                          ? "default"
+                          : buyer.match_status === "pending_review"
+                          ? "secondary"
+                          : "outline"
+                      }
+                      className={cn(
+                        "text-[10px] px-1.5 py-0 h-4 uppercase font-semibold",
+                        buyer.match_status === "matched"
+                          ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none"
+                          : buyer.match_status === "pending_review"
+                          ? "bg-amber-100 text-amber-700 hover:bg-amber-100 border-none"
+                          : "text-zinc-500"
+                      )}
+                    >
+                      {buyer.match_status.replace("_", " ")}
+                    </Badge>
                   </td>
                   <td style={styles.td}>
                     <span style={styles.odsTag}>{buyer.ods_code || "—"}</span>

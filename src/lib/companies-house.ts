@@ -1,7 +1,7 @@
 import stringSimilarity from "string-similarity";
 
 const BASE_URL = "https://api.company-information.service.gov.uk";
-const RATE_LIMIT_MS = 600; // ~1.67 req/sec to be safe
+export const RATE_LIMIT_MS = parseInt(process.env.COMPANIES_HOUSE_RATE_LIMIT_MS || "600", 10);
 
 let lastRequestTime = 0;
 

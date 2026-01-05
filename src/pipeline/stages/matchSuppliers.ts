@@ -14,6 +14,7 @@ import {
   findOrCreateCouncilEntity,
   findOrCreateGovDepartmentEntity,
 } from "@/lib/matching-helpers";
+import { isLikelyNotACompany } from "@/lib/company-validation";
 
 export type MatchSuppliersInput = {
   /**
@@ -100,12 +101,13 @@ export const matchSuppliersStage: PipelineStage<MatchSuppliersInput> = {
       }
 
       try {
-        // Skip numeric strings (likely not company names)
-        if (/^\d+$/.test(supplier.name.trim())) {
+        // Skip names that are obviously not companies/entities
+        const skipResult = isLikelyNotACompany(supplier.name);
+        if (skipResult) {
           await ctx.log({
             level: "info",
-            message: `Skipping numeric supplier name: ${supplier.name}`,
-            meta: { supplierId: supplier.id },
+            message: `Skipping non-company supplier name: ${supplier.name} (${skipResult.reason})`,
+            meta: { supplierId: supplier.id, reason: skipResult.reason },
           });
           await ctx.db
             .update(suppliers)

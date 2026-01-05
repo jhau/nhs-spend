@@ -24,6 +24,7 @@ DOCKER_DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/nhs_s
 OPENAI_API_KEY=sk-...
 MCP_POSTGRES_URL=http://localhost:8000/sse
 MCP_CHART_URL=http://localhost:8001/sse
+COMPANIES_HOUSE_RATE_LIMIT_MS=600
 ```
 
 Adjust the connection string to match your environment. The Drizzle CLI, runtime client, and MCP sidecar all require it.

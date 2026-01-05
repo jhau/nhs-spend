@@ -11,6 +11,7 @@ export interface GetBuyersParams {
   startDate?: string;
   endDate?: string;
   orgType?: string;
+  verified?: string;
 }
 
 export async function getBuyersData(params: GetBuyersParams) {
@@ -21,6 +22,7 @@ export async function getBuyersData(params: GetBuyersParams) {
     startDate = "",
     endDate = "",
     orgType = "",
+    verified = "",
   } = params;
 
   const offset = (page - 1) * limit;
@@ -33,6 +35,14 @@ export async function getBuyersData(params: GetBuyersParams) {
     typeFilter = `AND (e.entity_type = 'council' OR c.entity_id IS NOT NULL)`;
   } else if (orgType === "gov") {
     typeFilter = `AND gd.entity_id IS NOT NULL`;
+  }
+
+  // Build verification filter SQL
+  let verificationFilter = "";
+  if (verified === "true") {
+    verificationFilter = "AND b.entity_id IS NOT NULL";
+  } else if (verified === "false") {
+    verificationFilter = "AND b.entity_id IS NULL";
   }
 
   // Build date filter SQL
@@ -59,7 +69,7 @@ export async function getBuyersData(params: GetBuyersParams) {
          LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
          LEFT JOIN councils c ON e.id = c.entity_id
          LEFT JOIN government_departments gd ON e.id = gd.entity_id
-         WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${dateFilter} ${typeFilter}) as total_buyers,
+         WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${dateFilter} ${typeFilter} ${verificationFilter}) as total_buyers,
         (SELECT COUNT(DISTINCT se.buyer_id) 
          FROM spend_entries se 
          JOIN buyers b ON b.id = se.buyer_id 
@@ -68,14 +78,14 @@ export async function getBuyersData(params: GetBuyersParams) {
          LEFT JOIN councils c ON e.id = c.entity_id
          LEFT JOIN government_departments gd ON e.id = gd.entity_id
          WHERE payment_date >= CURRENT_DATE - INTERVAL '90 days'
-         AND (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${dateFilter} ${typeFilter}) as active_last_90_days,
+         AND (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${dateFilter} ${typeFilter} ${verificationFilter}) as active_last_90_days,
         (SELECT SUM(amount) FROM spend_entries se 
          JOIN buyers b ON b.id = se.buyer_id
          LEFT JOIN entities e ON b.entity_id = e.id
          LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
          LEFT JOIN councils c ON e.id = c.entity_id
          LEFT JOIN government_departments gd ON e.id = gd.entity_id
-         WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${dateFilter} ${typeFilter}) as total_spend
+         WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${dateFilter} ${typeFilter} ${verificationFilter}) as total_spend
     `)
       ),
 
@@ -91,6 +101,10 @@ export async function getBuyersData(params: GetBuyersParams) {
               e.name as entity_name,
               b.entity_id,
               CASE 
+                WHEN nhs.org_type = 'trust' THEN 'Trust'
+                WHEN nhs.org_type = 'icb' THEN 'ICB'
+                WHEN nhs.org_type = 'ccg' THEN 'CCG'
+                WHEN nhs.org_type = 'practice' THEN 'GP Practice'
                 WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
                 WHEN e.entity_type = 'council' THEN 'Council'
                 WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
@@ -98,6 +112,7 @@ export async function getBuyersData(params: GetBuyersParams) {
                 ELSE 'NHS'
               END as display_type,
               nhs.ods_code,
+              b.match_status,
               COALESCE(SUM(se.amount), 0) as total_spend,
               COUNT(DISTINCT se.raw_supplier) as supplier_count
             FROM buyers b
@@ -113,7 +128,8 @@ export async function getBuyersData(params: GetBuyersParams) {
             })
               AND (e.name IS NULL OR e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority'))
               ${sql.raw(typeFilter)}
-            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_sub_type, nhs.ods_code, e.entity_type, gd.entity_id
+              ${sql.raw(verificationFilter)}
+            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_type, nhs.org_sub_type, nhs.ods_code, e.entity_type, gd.entity_id, b.match_status
             HAVING COALESCE(SUM(se.amount), 0) > 0
             ORDER BY total_spend DESC
             LIMIT ${limit} OFFSET ${offset}
@@ -137,6 +153,10 @@ export async function getBuyersData(params: GetBuyersParams) {
               e.name as entity_name,
               b.entity_id,
               CASE 
+                WHEN nhs.org_type = 'trust' THEN 'Trust'
+                WHEN nhs.org_type = 'icb' THEN 'ICB'
+                WHEN nhs.org_type = 'ccg' THEN 'CCG'
+                WHEN nhs.org_type = 'practice' THEN 'GP Practice'
                 WHEN nhs.org_sub_type IS NOT NULL THEN nhs.org_sub_type
                 WHEN e.entity_type = 'council' THEN 'Council'
                 WHEN gd.entity_id IS NOT NULL THEN 'Government Dept'
@@ -144,6 +164,7 @@ export async function getBuyersData(params: GetBuyersParams) {
                 ELSE 'NHS'
               END as display_type,
               nhs.ods_code,
+              b.match_status,
               COALESCE(SUM(se.amount), 0) as total_spend,
               COUNT(DISTINCT se.raw_supplier) as supplier_count
             FROM buyers b
@@ -154,7 +175,8 @@ export async function getBuyersData(params: GetBuyersParams) {
             LEFT JOIN spend_entries se ON b.id = se.buyer_id ${dateFilter}
             WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER})
             ${typeFilter}
-            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_sub_type, nhs.ods_code, e.entity_type, gd.entity_id
+            ${verificationFilter}
+            GROUP BY b.id, b.name, e.name, b.entity_id, nhs.org_type, nhs.org_sub_type, nhs.ods_code, e.entity_type, gd.entity_id, b.match_status
             HAVING COALESCE(SUM(se.amount), 0) > 0
             ORDER BY total_spend DESC
             LIMIT ${limit} OFFSET ${offset}
@@ -190,6 +212,7 @@ export async function getBuyersData(params: GetBuyersParams) {
             })
               AND (e.name IS NULL OR e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority'))
               ${sql.raw(typeFilter)}
+              ${sql.raw(verificationFilter)}
           `
           : sql.raw(`
             SELECT COUNT(DISTINCT b.id) as count
@@ -201,6 +224,7 @@ export async function getBuyersData(params: GetBuyersParams) {
             INNER JOIN spend_entries se ON b.id = se.buyer_id ${dateFilter}
             WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER})
             ${typeFilter}
+            ${verificationFilter}
           `)
       ),
 
@@ -222,7 +246,7 @@ export async function getBuyersData(params: GetBuyersParams) {
       LEFT JOIN councils c ON e.id = c.entity_id
       LEFT JOIN government_departments gd ON e.id = gd.entity_id
       JOIN spend_entries se ON b.id = se.buyer_id ${dateFilter}
-      WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${typeFilter}
+      WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${typeFilter} ${verificationFilter}
       GROUP BY 1
       ORDER BY total_spend DESC
     `)

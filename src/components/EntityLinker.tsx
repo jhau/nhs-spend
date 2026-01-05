@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Search, Building2, Building, Landmark, Gavel, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ export function EntityLinker({
   buttonText = "Link",
   initialType = "company",
 }: EntityLinkerProps) {
+  const router = useRouter();
   const [showModal, setShowModal] = useState(false);
   const [activeType, setActiveType] = useState<EntityType>(initialType);
   const [isSearching, setIsSearching] = useState(false);
@@ -105,6 +107,7 @@ export function EntityLinker({
       });
       if (res.ok) {
         setShowModal(false);
+        router.refresh();
         if (onLinked) onLinked();
       }
     } catch (err) {
@@ -228,8 +231,20 @@ export function EntityLinker({
                               </Badge>
                             )}
                           </div>
-                          <div className="text-xs text-zinc-500 mb-1">
-                            {id} • {item.company_status || item.primary_role || item.council_type || item.organisation_type || "Active"}
+                          <div className="text-xs text-zinc-500 mb-1 flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-[10px] bg-zinc-100 px-1 rounded">{id}</span>
+                            <span>•</span>
+                            <span className="font-medium">
+                              {activeType === "company" ? item.company_status : 
+                               activeType === "council" ? item.council_type : 
+                               activeType === "government_department" ? item.organisation_type : 
+                               "Active"}
+                            </span>
+                            {item.primary_role && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-semibold">
+                                {item.primary_role}
+                              </Badge>
+                            )}
                           </div>
                           {item.address_snippet && (
                             <div className="text-xs text-zinc-400 leading-tight">

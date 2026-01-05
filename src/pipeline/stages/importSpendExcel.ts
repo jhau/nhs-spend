@@ -18,7 +18,7 @@ import type {
   PipelineLogLevel,
   PipelineStage,
 } from "../types";
-import { searchNhsOrganisation } from "@/lib/nhs-api";
+import { searchNhsOrganisation, isLikelyNhsOrganisation } from "@/lib/nhs-api";
 
 export type ImportSpendExcelInput = {
   /**
@@ -951,7 +951,21 @@ async function enrichOdsCodes(
     }
   }
 
-  const totalToProcess = itemsToProcess.length;
+  // Filter out names that are clearly not NHS organisations (e.g. products, frameworks)
+  const initialCount = itemsToProcess.length;
+  const filteredItems = itemsToProcess.filter((item) =>
+    isLikelyNhsOrganisation(item.name)
+  );
+  const removedCount = initialCount - filteredItems.length;
+
+  if (removedCount > 0) {
+    await ctx.log({
+      level: "info",
+      message: `ODS ENRICHMENT: Skipping ${removedCount} names that don't appear to be NHS organisations`,
+    });
+  }
+
+  const totalToProcess = filteredItems.length;
   if (totalToProcess > 0) {
     await ctx.log({
       level: "info",
@@ -1032,10 +1046,24 @@ async function enrichOdsCodes(
     if (results.length > 0) {
       const orgType = determineOrgType(name, currentMetadata?.trustType);
 
-      // Prioritize exact name matches or correct roles
+      // Prioritize exact name matches with the correct role
       const upperName = name.toUpperCase();
-      let match = results.find((r) => r.Name.toUpperCase() === upperName);
+      let match = results.find((r) => {
+        const isExactName = r.Name.toUpperCase() === upperName;
+        if (!isExactName) return false;
 
+        if (orgType === "icb") return r.PrimaryRoleId === "RO261"; // Integrated Care Board
+        if (orgType === "trust")
+          return r.PrimaryRoleId === "RO197" || r.PrimaryRoleId === "RO57"; // Trust or Foundation Trust
+        return true;
+      });
+
+      // Fallback 1: Exact name match (any role)
+      if (!match) {
+        match = results.find((r) => r.Name.toUpperCase() === upperName);
+      }
+
+      // Fallback 2: Any match with the correct role
       if (!match) {
         if (orgType === "icb") {
           match =
@@ -1113,9 +1141,9 @@ async function enrichOdsCodes(
   };
 
   // Process all items
-  for (let i = 0; i < itemsToProcess.length; i++) {
-    const { name, key, metadata } = itemsToProcess[i];
-    await processName(name, key, itemsToProcess.length - i, metadata);
+  for (let i = 0; i < filteredItems.length; i++) {
+    const { name, key, metadata } = filteredItems[i];
+    await processName(name, key, filteredItems.length - i, metadata);
   }
 }
 

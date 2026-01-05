@@ -3,6 +3,7 @@ import { suppliers } from "@/db/schema";
 import { matchSuppliersStage } from "@/pipeline/stages/matchSuppliers";
 import type { PipelineContext } from "@/pipeline/types";
 import { eq, sql } from "drizzle-orm";
+import { RATE_LIMIT_MS } from "./companies-house";
 
 let isRunning = false;
 
@@ -38,16 +39,25 @@ export function startBackgroundMatcher() {
         .where(eq(suppliers.matchStatus, "pending"));
 
       const remainingCount = Number(result?.count ?? 0);
+      const estimatedMs = remainingCount * RATE_LIMIT_MS;
+      const hours = Math.floor(estimatedMs / 3600000);
+      const mins = Math.floor((estimatedMs % 3600000) / 60000);
+      const secs = Math.floor((estimatedMs % 60000) / 1000);
+      const timeStr = hours > 0 
+        ? `${hours}h ${mins}m` 
+        : mins > 0 
+          ? `${mins}m ${secs}s` 
+          : `${secs}s`;
+
+      console.log(
+        `[Background Matcher] ${remainingCount} suppliers remaining. Est. time: ${timeStr} (at ${RATE_LIMIT_MS}ms/req)`
+      );
 
       if (remainingCount === 0) {
-        // Log occasionally even when empty so user knows it's alive,
-        // but don't spam.
         return;
       }
 
-      console.log(
-        `[Background Matcher] ${remainingCount} suppliers remaining. Running batch of 20...`
-      );
+      console.log(`[Background Matcher] Running batch of 20...`);
 
       const ctx: PipelineContext = {
         db: db as any,

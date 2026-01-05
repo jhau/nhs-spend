@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { suppliers, entities, buyers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getCompanyProfile } from "@/lib/companies-house";
 import { 
   findOrCreateCompanyEntity, 
@@ -31,6 +32,8 @@ export async function POST(req: Request) {
           updatedAt: new Date()
         })
         .where(eq(suppliers.id, supplierId));
+      revalidatePath("/suppliers");
+      revalidatePath(`/suppliers/${supplierId}`);
     } else if (buyerId) {
       await db.update(buyers)
         .set({
@@ -39,6 +42,11 @@ export async function POST(req: Request) {
           updatedAt: new Date()
         })
         .where(eq(buyers.id, buyerId));
+      revalidatePath("/buyers");
+      revalidatePath("/buyers/nhs");
+      revalidatePath("/buyers/gov");
+      revalidatePath("/buyers/councils");
+      revalidatePath(`/buyers/${buyerId}`);
     }
     
     return NextResponse.json({ success: true });
@@ -95,6 +103,8 @@ export async function POST(req: Request) {
           updatedAt: new Date()
         })
         .where(eq(suppliers.id, supplierId));
+      revalidatePath("/suppliers");
+      revalidatePath(`/suppliers/${supplierId}`);
     } else if (buyerId) {
       await db.update(buyers)
         .set({
@@ -105,6 +115,11 @@ export async function POST(req: Request) {
           updatedAt: new Date()
         })
         .where(eq(buyers.id, buyerId));
+      revalidatePath("/buyers");
+      revalidatePath("/buyers/nhs");
+      revalidatePath("/buyers/gov");
+      revalidatePath("/buyers/councils");
+      revalidatePath(`/buyers/${buyerId}`);
     }
 
     return NextResponse.json({ success: true });
