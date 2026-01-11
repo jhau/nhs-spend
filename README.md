@@ -20,11 +20,26 @@ Create a `.env` file in the project root with at least:
 
 ```
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/nhs_spend
+DATABASE_READONLY_URL=postgres://readonly_user:readonly_password@localhost:5432/nhs_spend
 DOCKER_DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/nhs_spend
 OPENAI_API_KEY=sk-...
 MCP_POSTGRES_URL=http://localhost:8000/sse
 MCP_CHART_URL=http://localhost:8001/sse
 COMPANIES_HOUSE_RATE_LIMIT_MS=600
+
+# New SQL assistant (no MCP; LangGraph + guarded SQL)
+OPENROUTER_API_KEY=...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+AI_MODEL=google/gemini-3-pro
+OPENROUTER_HTTP_REFERER=http://localhost:3000
+OPENROUTER_X_TITLE=nhs-spend
+
+# Optional guardrail tuning
+SQL_STATEMENT_TIMEOUT_MS=1500
+SQL_LOCK_TIMEOUT_MS=250
+SQL_IDLE_IN_TX_TIMEOUT_MS=2000
+SQL_MAX_TOTAL_COST=5000000
+SQL_MAX_PLAN_ROWS=2000000
 ```
 
 Adjust the connection string to match your environment. The Drizzle CLI, runtime client, and MCP sidecar all require it.

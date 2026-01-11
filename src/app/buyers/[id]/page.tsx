@@ -7,12 +7,22 @@ import Link from "next/link";
 interface Organisation {
   id: number;
   name: string;
+  entityName: string | null;
+  entityType: string | null;
+  registryId: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  locality: string | null;
+  postCode: string | null;
+  country: string | null;
+  entityStatus: string | null;
   displayType: string | null;
   odsCode: string | null;
-  postCode: string | null;
   icbOdsCode: string | null;
   latitude: number | null;
   longitude: number | null;
+  matchStatus: string;
+  matchConfidence: string | null;
 }
 
 interface Summary {
@@ -146,7 +156,7 @@ export default function OrganisationPage() {
         return;
       }
       const data = await res.json();
-      setOrganisation(data.organisation);
+      setOrganisation(data.buyer);
       setSummary(data.summary);
       setTopSuppliers(data.topSuppliers);
       setMonthlySpend(data.monthlySpend);
@@ -212,18 +222,70 @@ export default function OrganisationPage() {
         <Link href="/buyers" style={styles.backLink}>
           ← Back to Buyers
         </Link>
-        <h1 style={styles.title}>{organisation?.name}</h1>
-        <div style={styles.meta}>
-          {organisation?.odsCode && (
-            <span style={styles.badge}>ODS: {organisation.odsCode}</span>
-          )}
-          {organisation?.icbOdsCode && (
-            <span style={styles.badge}>ICB: {organisation.icbOdsCode}</span>
-          )}
-          {organisation?.displayType && (
-            <span style={styles.badgeType}>{organisation.displayType}</span>
-          )}
+        <div style={styles.headerTop}>
+          <div style={styles.titleSection}>
+            <h1 style={styles.title}>{organisation?.name}</h1>
+            <div style={styles.verificationBadge}>
+              {organisation?.matchStatus === "matched" ? (
+                <span style={styles.verifiedBadge}>Verified</span>
+              ) : (
+                <span style={styles.unverifiedBadge}>Unverified</span>
+              )}
+            </div>
+          </div>
+          <div style={styles.meta}>
+            {organisation?.odsCode && (
+              <span style={styles.badge}>ODS: {organisation.odsCode}</span>
+            )}
+            {organisation?.icbOdsCode && (
+              <span style={styles.badge}>ICB: {organisation.icbOdsCode}</span>
+            )}
+            {organisation?.displayType && (
+              <span style={styles.badgeType}>{organisation.displayType}</span>
+            )}
+          </div>
         </div>
+
+        {/* Entity Details (if verified) */}
+        {organisation?.matchStatus === "matched" && (
+          <div style={styles.entityDetailsCard}>
+            <h2 style={styles.entityDetailsTitle}>Entity Details</h2>
+            <div style={styles.entityDetailsGrid}>
+              <div style={styles.entityDetailItem}>
+                <span style={styles.detailLabel}>Official Name:</span>
+                <span style={styles.detailValue}>{organisation.entityName}</span>
+              </div>
+              <div style={styles.entityDetailItem}>
+                <span style={styles.detailLabel}>Registry ID:</span>
+                <span style={styles.detailValue}>{organisation.registryId}</span>
+              </div>
+              <div style={styles.entityDetailItem}>
+                <span style={styles.detailLabel}>Type:</span>
+                <span style={styles.detailValue}>{organisation.entityType}</span>
+              </div>
+              <div style={styles.entityDetailItem}>
+                <span style={styles.detailLabel}>Status:</span>
+                <span style={styles.detailValue}>{organisation.entityStatus}</span>
+              </div>
+              {(organisation.addressLine1 || organisation.locality || organisation.postCode) && (
+                <div style={{ ...styles.entityDetailItem, gridColumn: "span 2" }}>
+                  <span style={styles.detailLabel}>Address:</span>
+                  <span style={styles.detailValue}>
+                    {[
+                      organisation.addressLine1,
+                      organisation.addressLine2,
+                      organisation.locality,
+                      organisation.postCode,
+                      organisation.country,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -600,6 +662,76 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: "#dbeafe",
     borderRadius: "4px",
     color: "#1d4ed8",
+  },
+  headerTop: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "8px",
+    marginBottom: "20px",
+  },
+  titleSection: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap" as const,
+  },
+  verificationBadge: {
+    display: "flex",
+    alignItems: "center",
+  },
+  verifiedBadge: {
+    padding: "4px 12px",
+    backgroundColor: "#dcfce7",
+    color: "#166534",
+    borderRadius: "9999px",
+    fontSize: "12px",
+    fontWeight: 600,
+    border: "1px solid #bbf7d0",
+  },
+  unverifiedBadge: {
+    padding: "4px 12px",
+    backgroundColor: "#fef2f2",
+    color: "#991b1b",
+    borderRadius: "9999px",
+    fontSize: "12px",
+    fontWeight: 600,
+    border: "1px solid #fecaca",
+  },
+  entityDetailsCard: {
+    backgroundColor: "white",
+    borderRadius: "12px",
+    border: "1px solid #e8e8e8",
+    padding: "20px",
+    marginBottom: "24px",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+  },
+  entityDetailsTitle: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#4b5563",
+    marginBottom: "16px",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
+  },
+  entityDetailsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "16px",
+  },
+  entityDetailItem: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px",
+  },
+  detailLabel: {
+    fontSize: "12px",
+    color: "#9ca3af",
+    fontWeight: 500,
+  },
+  detailValue: {
+    fontSize: "14px",
+    color: "#1f2937",
+    fontWeight: 500,
   },
   filtersContainer: {
     display: "flex",

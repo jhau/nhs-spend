@@ -3,110 +3,12 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import "highlight.js/styles/github-dark.css";
+import "highlight.js/styles/github.css";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { User, Bot } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type MessageRole = "user" | "assistant" | "tool" | "system";
-
-const styles = {
-  card: {
-    borderRadius: "0.75rem",
-    border: "1px solid #1e293b",
-    padding: "1rem",
-    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.25)",
-  },
-  cardHeading: {
-    marginBottom: "0.4rem",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    fontSize: "0.75rem",
-    color: "#cbd5f5",
-  },
-  cardBody: {
-    fontSize: "0.95rem",
-    lineHeight: 1.6,
-  },
-};
-
-const markdownStyles = `
-  .markdown-content {
-    color: #e2e8f0;
-  }
-  .markdown-content p {
-    margin-bottom: 1em;
-  }
-  .markdown-content p:last-child {
-    margin-bottom: 0;
-  }
-  .markdown-content ul, .markdown-content ol {
-    margin-left: 1.5em;
-    margin-bottom: 1em;
-  }
-  .markdown-content li {
-    margin-bottom: 0.5em;
-  }
-  .markdown-content code {
-    background-color: rgba(0, 0, 0, 0.3);
-    padding: 0.2em 0.4em;
-    border-radius: 0.25rem;
-    font-size: 0.9em;
-    font-family: 'Courier New', monospace;
-  }
-  .markdown-content pre {
-    background-color: #1e293b;
-    padding: 1em;
-    border-radius: 0.5rem;
-    overflow-x: auto;
-    margin-bottom: 1em;
-  }
-  .markdown-content pre code {
-    background-color: transparent;
-    padding: 0;
-    font-size: 0.85em;
-  }
-  .markdown-content h1, .markdown-content h2, .markdown-content h3,
-  .markdown-content h4, .markdown-content h5, .markdown-content h6 {
-    margin-top: 1.5em;
-    margin-bottom: 0.5em;
-    font-weight: 600;
-    color: #cbd5f5;
-  }
-  .markdown-content h1 { font-size: 1.5em; }
-  .markdown-content h2 { font-size: 1.3em; }
-  .markdown-content h3 { font-size: 1.1em; }
-  .markdown-content blockquote {
-    border-left: 4px solid #3b82f6;
-    padding-left: 1em;
-    margin-left: 0;
-    margin-bottom: 1em;
-    color: #94a3b8;
-  }
-  .markdown-content a {
-    color: #60a5fa;
-    text-decoration: underline;
-  }
-  .markdown-content a:hover {
-    color: #93c5fd;
-  }
-  .markdown-content table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-bottom: 1em;
-  }
-  .markdown-content th, .markdown-content td {
-    border: 1px solid #475569;
-    padding: 0.5em;
-    text-align: left;
-  }
-  .markdown-content th {
-    background-color: rgba(59, 130, 246, 0.2);
-    font-weight: 600;
-  }
-  .markdown-content hr {
-    border: none;
-    border-top: 1px solid #475569;
-    margin: 1.5em 0;
-  }
-`;
 
 interface ChatMessageProps {
   role: MessageRole;
@@ -115,25 +17,64 @@ interface ChatMessageProps {
 
 export function ChatMessage({ role, content }: ChatMessageProps) {
   const isUser = role === "user";
-  const displayRole = isUser ? "You" : "Assistant";
-
-  const backgroundColor = isUser ? "#0f172a" : "rgba(59, 130, 246, 0.18)";
-  const borderColor = isUser ? "#1e293b" : "rgba(59, 130, 246, 0.4)";
 
   return (
-    <>
-      <style>{markdownStyles}</style>
-      <article style={{ ...styles.card, backgroundColor, borderColor }}>
-        <header style={styles.cardHeading}>{displayRole}</header>
-        <div style={styles.cardBody} className="markdown-content">
+    <Card className={cn(
+      "overflow-hidden transition-all shadow-sm border-slate-200",
+      isUser ? "bg-slate-50/50" : "bg-white"
+    )}>
+      <CardHeader className="py-2.5 px-4 flex flex-row items-center gap-3 border-b border-slate-100 bg-slate-50/30">
+        <div className={cn(
+          "w-6 h-6 rounded-md flex items-center justify-center shadow-sm",
+          isUser ? "bg-[#2D213F] text-white" : "bg-orange-500 text-white"
+        )}>
+          {isUser ? <User size={12} /> : <Bot size={12} />}
+        </div>
+        <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-slate-500 m-0">
+          {isUser ? "You" : "Assistant"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="py-3 px-5">
+        <div className="text-sm text-slate-700 leading-relaxed overflow-x-auto">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeHighlight]}
+            components={{
+              p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+              ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1">{children}</ol>,
+              li: ({ children }) => <li className="pl-1">{children}</li>,
+              h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2 text-slate-900">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-base font-bold mt-3 mb-2 text-slate-900">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-sm font-bold mt-2 mb-1 text-slate-900">{children}</h3>,
+              code: ({ children }) => (
+                <code className="bg-slate-100 text-rose-600 px-1 py-0.5 rounded font-mono text-[0.85em]">
+                  {children}
+                </code>
+              ),
+              pre: ({ children }) => (
+                <pre className="bg-slate-900 text-slate-100 p-4 rounded-xl overflow-x-auto mb-3 border border-slate-800 shadow-inner">
+                  {children}
+                </pre>
+              ),
+              table: ({ children }) => (
+                <div className="overflow-x-auto mb-4 border rounded-lg">
+                  <table className="min-w-full divide-y divide-slate-200">{children}</table>
+                </div>
+              ),
+              thead: ({ children }) => <thead className="bg-slate-50">{children}</thead>,
+              th: ({ children }) => <th className="px-3 py-2 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b">{children}</th>,
+              td: ({ children }) => <td className="px-3 py-2 text-xs text-slate-600 border-b">{children}</td>,
+              blockquote: ({ children }) => <blockquote className="border-l-4 border-slate-200 pl-4 italic my-3 text-slate-500">{children}</blockquote>,
+              a: ({ children, href }) => <a href={href} className="text-blue-600 underline hover:text-blue-800" target="_blank" rel="noopener noreferrer">{children}</a>,
+            }}
           >
             {content}
           </ReactMarkdown>
         </div>
-      </article>
-    </>
+      </CardContent>
+    </Card>
   );
 }
+
+

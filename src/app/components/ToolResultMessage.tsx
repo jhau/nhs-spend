@@ -1,21 +1,24 @@
 const styles = {
   card: {
     borderRadius: "0.75rem",
-    border: "1px solid #1e293b",
+    border: "1px solid #e8e8e8",
     padding: "1rem",
-    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.25)",
+    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
   },
   cardHeading: {
-    marginBottom: "0.4rem",
+    marginBottom: "0.5rem",
     textTransform: "uppercase" as const,
     letterSpacing: "0.08em",
-    fontSize: "0.75rem",
-    color: "#cbd5f5",
+    fontSize: "0.7rem",
+    fontWeight: 700,
+    color: "#888",
   },
   cardBody: {
     whiteSpace: "pre-wrap" as const,
-    fontSize: "0.95rem",
+    fontSize: "0.9rem",
     lineHeight: 1.6,
+    color: "#333",
+    fontFamily: "monospace",
   },
 };
 
@@ -25,8 +28,8 @@ interface ToolResultMessageProps {
 }
 
 export function ToolResultMessage({ toolName, result }: ToolResultMessageProps) {
-  const backgroundColor = "rgba(16, 185, 129, 0.15)";
-  const borderColor = "rgba(16, 185, 129, 0.4)";
+  const backgroundColor = "#ecfdf5"; // Light emerald
+  const borderColor = "#d1fae5";
 
   // Format result based on type
   let formattedResult: string;
@@ -53,7 +56,7 @@ export function ToolResultMessage({ toolName, result }: ToolResultMessageProps) 
   return (
     <article style={{ ...styles.card, backgroundColor, borderColor }}>
       <header style={styles.cardHeading}>✓ Tool Result: {toolName}</header>
-      <p style={styles.cardBody}>{formattedResult}</p>
+      <div style={styles.cardBody}>{formattedResult}</div>
     </article>
   );
 }
