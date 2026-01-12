@@ -86,6 +86,14 @@ export function validateReadonlySql(
         throw new SqlValidationError("Invalid table reference.");
       }
 
+      // Detect system schema queries and provide specific guidance
+      const schemaLower = qname?.schema?.toLowerCase();
+      if (schemaLower === "information_schema" || schemaLower === "pg_catalog") {
+        throw new SqlValidationError(
+          `FORBIDDEN: Querying ${schemaLower} is not allowed. The complete schema is provided in your system prompt - use that instead.`
+        );
+      }
+
       if (opts.enforcePublicSchema && qname?.schema && qname.schema !== "public") {
         throw new SqlValidationError("Only the public schema is allowed.");
       }

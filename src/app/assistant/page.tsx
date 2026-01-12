@@ -16,7 +16,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, Cpu } from "lucide-react";
 
-const MODELS = [{ id: "google/gemini-3-pro-preview", name: "Gemini 3 Pro" }];
+const MODELS = [
+  { id: "google/gemini-3-pro-preview", name: "Gemini 3 Pro" },
+  { id: "openai/gpt-5.2", name: "ChatGPT 5.2" },
+];
 
 export default function AssistantPage() {
   const listRef = useRef<HTMLDivElement>(null);
@@ -41,7 +44,7 @@ export default function AssistantPage() {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isLoading]);
 
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden font-sans">
@@ -56,18 +59,50 @@ export default function AssistantPage() {
             <div className="flex flex-col gap-5">
               {messages
                 .filter((m) => m.role === "user" || m.role === "assistant")
-                .map((m) => (
-                  <ChatMessage
-                    key={m.id}
-                    role={m.role as any}
-                    content={m.parts
-                      .filter(
-                        (p) => p.type === "text" || p.type === "reasoning"
-                      )
-                      .map((p: any) => p.text)
-                      .join("")}
-                  />
-                ))}
+                .map((m, idx, filtered) => {
+                  const rawContent = m.parts
+                    .filter((p) => p.type === "text" || p.type === "reasoning")
+                    .map((p: any) => p.text)
+                    .join("");
+
+                  // Extract metadata if present
+                  let displayContent = rawContent;
+                  let metadata = undefined;
+                  const metadataMatch = rawContent.match(
+                    /\n\n\[METADATA:(.*)\]$/
+                  );
+                  if (metadataMatch) {
+                    try {
+                      metadata = JSON.parse(metadataMatch[1]);
+                      displayContent = rawContent.replace(
+                        /\n\n\[METADATA:.*\]$/,
+                        ""
+                      );
+                    } catch (e) {
+                      console.error("Failed to parse metadata", e);
+                    }
+                  }
+
+                  const isLast = idx === filtered.length - 1;
+                  const isAssistantStreamingAndEmpty =
+                    isLast &&
+                    status === "streaming" &&
+                    displayContent.trim() === "" &&
+                    m.role === "assistant";
+
+                  return (
+                    <ChatMessage
+                      key={m.id}
+                      role={m.role as any}
+                      content={displayContent}
+                      metadata={metadata}
+                      isLoading={isAssistantStreamingAndEmpty}
+                    />
+                  );
+                })}
+              {status === "submitted" && (
+                <ChatMessage role="assistant" content="" isLoading={true} />
+              )}
             </div>
           )}
         </div>

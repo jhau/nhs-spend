@@ -6,7 +6,9 @@ import { SqlValidationError, validateReadonlySql } from "./validateSql";
 export const executeSqlInputSchema = z.object({
   sql: z.string().min(1),
   maxRows: z.number().int().positive().optional(),
-  reason: z.string().optional(),
+  reason: z
+    .string()
+    .min(5, "Please provide a brief reason for running this query"),
 });
 
 export type ExecuteSqlInput = z.infer<typeof executeSqlInputSchema>;
@@ -189,6 +191,10 @@ export async function executeSqlSafe(
 
 export function formatSqlToolError(e: unknown): string {
   if (e instanceof SqlValidationError) {
+    // Detect system schema discovery attempts and provide explicit guidance
+    if (e.message.includes("information_schema") || e.message.includes("pg_catalog")) {
+      return `${e.message}\n\nKey tables: spend_entries (payment_date, amount, buyer_id, supplier_id), buyers (id, name, entity_id), suppliers (id, name, entity_id), entities (id, name, entity_type). DO NOT query system tables again.`;
+    }
     // Include allowed tables hint for table errors
     if (e.message.includes("Table not allowed")) {
       const allowed = Array.from(DEFAULT_ALLOWED_TABLES)

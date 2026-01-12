@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     const lastUserMessage = [...uiMessages].reverse().find(m => m.role === 'user');
     const model = body.data?.model || lastUserMessage?.metadata?.model;
 
-    const { text } = await invokeAssistant({ 
+    const { text, metadata } = await invokeAssistant({ 
       messages: lcMessages,
       signal: req.signal,
       model: model
@@ -60,9 +60,10 @@ export async function POST(req: Request) {
 
     console.log(`[Assistant API] ${requestId} - Success. Response length: ${text.length}`);
 
-    // AI SDK client can be configured to use `streamProtocol: "text"`,
-    // in which case a plain text response works well (and can be streamed later).
-    return new Response(text, {
+    // Append metadata as a parseable block at the end
+    const finalResponse = `${text}\n\n[METADATA:${JSON.stringify(metadata)}]`;
+
+    return new Response(finalResponse, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   } catch (e) {
