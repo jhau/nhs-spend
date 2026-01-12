@@ -10,6 +10,8 @@ import {
   X,
   Terminal,
   RotateCw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,14 +78,18 @@ export default function PipelinePage() {
   const [file, setFile] = useState<File | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
   const [orgType, setOrgType] = useState<
-    "nhs" | "council" | "government_department"
-  >("nhs");
+    "nhs" | "council" | "government_department" | null
+  >(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [runId, setRunId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<any[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 20;
+
   const [isDragging, setIsDragging] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [streamStatus, setStreamStatus] = useState<
@@ -108,17 +114,22 @@ export default function PipelinePage() {
     () => !!file && !uploading && !calculatingChecksum,
     [file, uploading, calculatingChecksum]
   );
-  const canRun = useMemo(() => !!assetId && !running, [assetId, running]);
+  const canRun = useMemo(
+    () => !!assetId && !!orgType && !running,
+    [assetId, orgType, running]
+  );
 
-  async function refreshRuns() {
-    const resp = await fetch("/api/pipeline/runs?limit=20");
+  async function refreshRuns(targetPage = page) {
+    const offset = (targetPage - 1) * limit;
+    const resp = await fetch(`/api/pipeline/runs?limit=${limit}&offset=${offset}`);
     const data = await resp.json();
     setRuns(data.runs ?? []);
+    setTotalCount(data.totalCount ?? 0);
   }
 
   useEffect(() => {
     void refreshRuns();
-  }, []);
+  }, [page]);
 
   // Auto-scroll logs to bottom
   useEffect(() => {
@@ -163,7 +174,7 @@ export default function PipelinePage() {
       setStreamStatus("complete");
       es.close();
       // Refresh runs list to update status
-      void refreshRuns();
+      void refreshRuns(page);
     });
 
     es.onerror = (e) => {
@@ -332,7 +343,11 @@ export default function PipelinePage() {
 
       setUploadProgress(100);
       setAssetId(presignData.assetId);
-      await refreshRuns();
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        await refreshRuns(1);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setUploadProgress(null);
@@ -364,7 +379,18 @@ export default function PipelinePage() {
         throw new Error(data.error || "Failed to start run");
       }
       setRunId(data.runId);
-      await refreshRuns();
+      
+      // Clear upload UI state after successful run start
+      setFile(null);
+      setAssetId(null);
+      setOrgType(null);
+      setDuplicateWarning(null);
+      
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        await refreshRuns(1);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -386,7 +412,11 @@ export default function PipelinePage() {
         throw new Error(data.error || "Failed to retry run");
       }
       setRunId(data.runId);
-      await refreshRuns();
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        await refreshRuns(1);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -412,75 +442,6 @@ export default function PipelinePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Drop zone */}
-          <div className="space-y-3">
-            <label className="text-sm font-medium">Organization Type</label>
-            <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <div className={cn(
-                  "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
-                  orgType === "nhs" ? "bg-primary" : "bg-background"
-                )}>
-                  {orgType === "nhs" && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
-                </div>
-                <input
-                  type="radio"
-                  name="orgType"
-                  className="sr-only"
-                  checked={orgType === "nhs"}
-                  onChange={() => setOrgType("nhs")}
-                />
-                <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  NHS Organisation
-                </span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <div className={cn(
-                  "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
-                  orgType === "council" ? "bg-primary" : "bg-background"
-                )}>
-                  {orgType === "council" && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
-                </div>
-                <input
-                  type="radio"
-                  name="orgType"
-                  className="sr-only"
-                  checked={orgType === "council"}
-                  onChange={() => setOrgType("council")}
-                />
-                <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Local Authority (Council)
-                </span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <div
-                  className={cn(
-                    "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
-                    orgType === "government_department"
-                      ? "bg-primary"
-                      : "bg-background"
-                  )}
-                >
-                  {orgType === "government_department" && (
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
-                  )}
-                </div>
-                <input
-                  type="radio"
-                  name="orgType"
-                  className="sr-only"
-                  checked={orgType === "government_department"}
-                  onChange={() => setOrgType("government_department")}
-                />
-                <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Government Department
-                </span>
-              </label>
-            </div>
-          </div>
-
           <div
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -599,10 +560,6 @@ export default function PipelinePage() {
 
             {assetId && (
               <>
-                <Button disabled={!canRun} onClick={() => void startRun()}>
-                  <Play className="size-4" />
-                  {running ? "Starting…" : "Run Import"}
-                </Button>
                 <span className="text-sm text-muted-foreground">
                   Asset ID:{" "}
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
@@ -624,6 +581,98 @@ export default function PipelinePage() {
               </span>
             )}
           </div>
+
+          {/* Organization Type Selection - Only after assetId is present */}
+          {assetId && (
+            <div className="space-y-4 rounded-lg border bg-muted/30 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="space-y-1">
+                <label className="text-sm font-semibold">Select Organization Type</label>
+                <p className="text-xs text-muted-foreground">
+                  Choose the type of organization for this data import.
+                </p>
+              </div>
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className={cn(
+                    "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
+                    orgType === "nhs" ? "bg-primary" : "bg-background"
+                  )}>
+                    {orgType === "nhs" && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                  </div>
+                  <input
+                    type="radio"
+                    name="orgType"
+                    className="sr-only"
+                    checked={orgType === "nhs"}
+                    onChange={() => setOrgType("nhs")}
+                  />
+                  <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    NHS Organisation
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className={cn(
+                    "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
+                    orgType === "council" ? "bg-primary" : "bg-background"
+                  )}>
+                    {orgType === "council" && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                  </div>
+                  <input
+                    type="radio"
+                    name="orgType"
+                    className="sr-only"
+                    checked={orgType === "council"}
+                    onChange={() => setOrgType("council")}
+                  />
+                  <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    Local Authority (Council)
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div
+                    className={cn(
+                      "flex h-4 w-4 items-center justify-center rounded-full border border-primary transition-colors",
+                      orgType === "government_department"
+                        ? "bg-primary"
+                        : "bg-background"
+                    )}
+                  >
+                    {orgType === "government_department" && (
+                      <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
+                    )}
+                  </div>
+                  <input
+                    type="radio"
+                    name="orgType"
+                    className="sr-only"
+                    checked={orgType === "government_department"}
+                    onChange={() => setOrgType("government_department")}
+                  />
+                  <span className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    Government Department
+                  </span>
+                </label>
+              </div>
+
+              <div className="pt-2">
+                <Button 
+                  disabled={!canRun} 
+                  onClick={() => void startRun()}
+                  className="w-full sm:w-auto"
+                >
+                  <Play className="size-4" />
+                  {running ? "Starting…" : "Run Import"}
+                </Button>
+                {!orgType && (
+                  <p className="text-[10px] text-destructive mt-2 font-medium">
+                    * Please select an organization type to proceed with the import.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
@@ -673,13 +722,27 @@ export default function PipelinePage() {
                     ))}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    onClick={() => {
+                      const firstAssetId = duplicateWarning.duplicateAssets[0]?.id;
+                      if (firstAssetId) {
+                        setDuplicateWarning(null);
+                        setAssetId(firstAssetId);
+                        void startRun(firstAssetId);
+                      }
+                    }}
+                    variant="default"
+                  >
+                    <Play className="size-4" />
+                    Use Existing Asset & Run Import
+                  </Button>
                   <Button
                     onClick={() => {
                       setDuplicateWarning(null);
                       void uploadSelected(true);
                     }}
-                    variant="default"
+                    variant="secondary"
                   >
                     Continue Anyway
                   </Button>
@@ -756,7 +819,7 @@ export default function PipelinePage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => void refreshRuns()}
+              onClick={() => void refreshRuns(page)}
             >
               <RefreshCw className="size-4" />
               Refresh
@@ -769,6 +832,7 @@ export default function PipelinePage() {
               <TableRow>
                 <TableHead>Run</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Org Type</TableHead>
                 <TableHead>Filename</TableHead>
                 <TableHead>Asset</TableHead>
                 <TableHead>Status</TableHead>
@@ -786,6 +850,14 @@ export default function PipelinePage() {
                   ? "Import Spending" 
                   : r.fromStageId || "Unknown";
 
+                const orgTypeLabel = r.orgType === "nhs" 
+                  ? "NHS Organisation"
+                  : r.orgType === "council"
+                  ? "Local Authority"
+                  : r.orgType === "government_department"
+                  ? "Government Department"
+                  : r.orgType || "—";
+
                 return (
                   <TableRow key={r.id}>
                     <TableCell>
@@ -799,6 +871,11 @@ export default function PipelinePage() {
                     <TableCell>
                       <Badge variant="outline" className="font-normal">
                         {runType}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-normal">
+                        {orgTypeLabel}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-[300px] truncate">
@@ -846,7 +923,7 @@ export default function PipelinePage() {
               {runs.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="h-24 text-center text-muted-foreground"
                   >
                     No runs yet.
@@ -855,6 +932,38 @@ export default function PipelinePage() {
               )}
             </TableBody>
           </Table>
+
+          {totalCount > limit && (
+            <div className="flex items-center justify-between px-2 py-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Showing {Math.min(totalCount, (page - 1) * limit + 1)} to{" "}
+                {Math.min(totalCount, page * limit)} of {totalCount} runs
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  <ChevronLeft className="size-4 mr-1" />
+                  Previous
+                </Button>
+                <div className="text-sm font-medium">
+                  Page {page} of {Math.ceil(totalCount / limit)}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page >= Math.ceil(totalCount / limit)}
+                >
+                  Next
+                  <ChevronRight className="size-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

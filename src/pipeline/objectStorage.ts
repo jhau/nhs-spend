@@ -155,3 +155,22 @@ export function presignObjectUrl(params: PresignParams): string {
   return url.toString();
 }
 
+/**
+ * Checks if an object exists in storage by sending a HEAD request.
+ * Uses a presigned URL.
+ */
+export async function checkObjectExists(objectKey: string): Promise<boolean> {
+  try {
+    const url = presignObjectUrl({
+      method: "GET",
+      objectKey,
+      expiresSeconds: 60,
+    });
+    const resp = await fetch(url, { method: "HEAD" });
+    return resp.ok;
+  } catch (err) {
+    console.error(`Error checking object existence for ${objectKey}:`, err);
+    return false;
+  }
+}
+

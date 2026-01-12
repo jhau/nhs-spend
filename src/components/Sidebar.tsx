@@ -19,7 +19,8 @@ import {
   Building, 
   CreditCard,
   HelpCircle,
-  ExternalLink
+  ExternalLink,
+  Gauge,
 } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -101,6 +102,7 @@ export const Sidebar = () => {
           <SidebarItem icon={RefreshCw} label="Pipeline Sync" href="/pipeline" badge="Enterprise" />
 
           <SidebarSection title="Admin" />
+          <SidebarItem icon={Gauge} label="Data Dashboard" href="/admin/dashboard" />
           <SidebarItem icon={Link2} label="Integrations" href="/integrations" />
           <SidebarItem icon={Users2} label="User Management" href="/user-management" />
           <SidebarItem icon={Building} label="Organisational Profile" href="/profile" />

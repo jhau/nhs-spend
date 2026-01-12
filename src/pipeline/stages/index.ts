@@ -2,4 +2,5 @@ export { importSpendExcelStage, type ImportSpendExcelInput } from "./importSpend
 export { importCouncilSpendExcelStage, type ImportCouncilSpendExcelInput } from "./importCouncilSpendExcel";
 export { importGovDeptSpendExcelStage, type ImportGovDeptSpendExcelInput } from "./importGovDeptSpendExcel";
 export { matchSuppliersStage, type MatchSuppliersInput } from "./matchSuppliers";
+export { enrichEntityLocationsStage, type EnrichEntityLocationsInput } from "./enrichEntityLocations";
 

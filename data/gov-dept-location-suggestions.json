@@ -1,0 +1,776 @@
+[
+  {
+    "entityId": 1344,
+    "slug": "environment-agency",
+    "name": "Environment Agency",
+    "suggestedPostcode": "BS1 5AH",
+    "confidence": 0.9,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/environment-agency",
+        "snippet": "ces, Environment Agency Horizon House, Deanery Road Bristol BS1 5AH United Kingdom All statutory and legal documents should be"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "CM2 5PH",
+        "url": "https://www.gov.uk/government/organisations/environment-agency",
+        "snippet": "r Thames: current river conditions 12 January 2026 Guidance CM2 5PH, Chelmsford City Council: environmental permit application"
+      },
+      {
+        "postcode": "S60 1BY",
+        "url": "https://www.gov.uk/government/organisations/environment-agency",
+        "snippet": "iries National Customer Contact Centre PO Box 544 Rotherham S60 1BY United Kingdom Email enquiries@environment-agency.gov.uk Te"
+      },
+      {
+        "postcode": "BS1 5AH",
+        "url": "https://www.gov.uk/government/organisations/environment-agency",
+        "snippet": "ces, Environment Agency Horizon House, Deanery Road Bristol BS1 5AH United Kingdom All statutory and legal documents should be"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:44:37.462Z"
+  },
+  {
+    "entityId": 247,
+    "slug": "hm-revenue-customs",
+    "name": "HM Revenue & Customs",
+    "suggestedPostcode": "NE98 1ZZ",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/hm-revenue-customs",
+        "snippet": "ct Team S17157th FloorCentral Mail Unit Newcastle Upon Tyne NE98 1ZZ United Kingdom Email foi.request@hmrc.gov.uk Corporate info"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "NE98 1ZZ",
+        "url": "https://www.gov.uk/government/organisations/hm-revenue-customs",
+        "snippet": "ct Team S17157th FloorCentral Mail Unit Newcastle Upon Tyne NE98 1ZZ United Kingdom Email foi.request@hmrc.gov.uk Corporate info"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:44:39.923Z"
+  },
+  {
+    "entityId": 329,
+    "slug": "nhs-business-services-authority",
+    "name": "NHS Business Services Authority",
+    "suggestedPostcode": "NE15 8NY",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "http://www.nhsbsa.nhs.uk/contact-us",
+        "snippet": "a House Goldcrest Way Newburn Riverside Newcastle upon Tyne NE15 8NY Breadcrumb Contact us Make a payment Complaints Media enqui"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "NE15 8NY",
+        "url": "http://www.nhsbsa.nhs.uk/contact-us",
+        "snippet": "a House Goldcrest Way Newburn Riverside Newcastle upon Tyne NE15 8NY Breadcrumb Contact us Make a payment Complaints Media enqui"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:44:50.894Z"
+  },
+  {
+    "entityId": 360,
+    "slug": "attorney-generals-office",
+    "name": "Attorney General's Office",
+    "suggestedPostcode": "SW1H 9EA",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/attorney-generals-office",
+        "snippet": "e address Attorney General’s Office 102 Petty France London SW1H 9EA United Kingdom Email correspondence@attorneygeneral.gov.uk"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1H 9EA",
+        "url": "https://www.gov.uk/government/organisations/attorney-generals-office",
+        "snippet": "e address Attorney General’s Office 102 Petty France London SW1H 9EA United Kingdom Email correspondence@attorneygeneral.gov.uk"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:44:51.997Z"
+  },
+  {
+    "entityId": 363,
+    "slug": "student-loans-company",
+    "name": "Student Loans Company",
+    "suggestedPostcode": "G5 8DF",
+    "confidence": 0.9,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/student-loans-company",
+        "snippet": "or Contact SLC Student Loans Company 10 Clyde Place Glasgow G5 8DF United Kingdom General Enquiries 0141 306 2000 Student Fina"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "G5 8DF",
+        "url": "https://www.gov.uk/government/organisations/student-loans-company",
+        "snippet": "or Contact SLC Student Loans Company 10 Clyde Place Glasgow G5 8DF United Kingdom General Enquiries 0141 306 2000 Student Fina"
+      },
+      {
+        "postcode": "DL1 1RW",
+        "url": "https://www.gov.uk/government/organisations/student-loans-company",
+        "snippet": "ding Lingfield Point McMullen Road Darlington County Durham DL1 1RW United Kingdom Contact: Student Finance England General Enq"
+      },
+      {
+        "postcode": "LL31 9RZ",
+        "url": "https://www.gov.uk/government/organisations/student-loans-company",
+        "snippet": "elsh Government Office Sarn Mynach Llandudno Junction Conwy LL31 9RZ United Kingdom Contact: Student Finance Wales General Enqui"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:06.933Z"
+  },
+  {
+    "entityId": 493,
+    "slug": "driver-and-vehicle-licensing-agency",
+    "name": "Driver and Vehicle Licensing Agency",
+    "suggestedPostcode": "SA6 7JL",
+    "confidence": 0.95,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/driver-and-vehicle-licensing-agency",
+        "snippet": ", Driver and Vehicle Licensing Agency Longview Road Swansea SA6 7JL United Kingdom FOI contact form You can also ask for inform"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SA7 0AN",
+        "url": "https://www.gov.uk/government/organisations/driver-and-vehicle-licensing-agency",
+        "snippet": "ey Development Centre Upper Forest Way Swansea Vale Swansea SA7 0AN United Kingdom Contact: Events and Conferencing Make a Free"
+      },
+      {
+        "postcode": "SA6 7JL",
+        "url": "https://www.gov.uk/government/organisations/driver-and-vehicle-licensing-agency",
+        "snippet": ", Driver and Vehicle Licensing Agency Longview Road Swansea SA6 7JL United Kingdom FOI contact form You can also ask for inform"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:16.052Z"
+  },
+  {
+    "entityId": 518,
+    "slug": "medicines-and-healthcare-products-regulatory-agency",
+    "name": "Medicines and Healthcare products Regulatory Agency",
+    "suggestedPostcode": "E14 4PU",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/medicines-and-healthcare-products-regulatory-agency",
+        "snippet": "ntact MHRA General enquiries MHRA 10 South Colonnade London E14 4PU United Kingdom Email info@mhra.gov.uk Telephone 020 3080 60"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "E14 4PU",
+        "url": "https://www.gov.uk/government/organisations/medicines-and-healthcare-products-regulatory-agency",
+        "snippet": "ntact MHRA General enquiries MHRA 10 South Colonnade London E14 4PU United Kingdom Email info@mhra.gov.uk Telephone 020 3080 60"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:17.425Z"
+  },
+  {
+    "entityId": 527,
+    "slug": "department-of-health-and-social-care",
+    "name": "Department of Health and Social Care",
+    "suggestedPostcode": "SW1H 0EU",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/department-of-health-and-social-care",
+        "snippet": "artment of Health and Social Care 39 Victoria Street London SW1H 0EU United Kingdom Contact: General enquiries Switchboard 0300"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1H 0EU",
+        "url": "https://www.gov.uk/government/organisations/department-of-health-and-social-care",
+        "snippet": "artment of Health and Social Care 39 Victoria Street London SW1H 0EU United Kingdom Contact: General enquiries Switchboard 0300"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:18.201Z"
+  },
+  {
+    "entityId": 1424,
+    "slug": "uk-health-security-agency",
+    "name": "UK Health Security Agency",
+    "suggestedPostcode": "E14 4PU",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/uk-health-security-agency",
+        "snippet": "sts Information Rights Team UKHSA 10 South Colonnade London E14 4PU United Kingdom Email InformationRights@UKHSA.gov.uk High pr"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "E14 4PU",
+        "url": "https://www.gov.uk/government/organisations/uk-health-security-agency",
+        "snippet": "sts Information Rights Team UKHSA 10 South Colonnade London E14 4PU United Kingdom Email InformationRights@UKHSA.gov.uk High pr"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:18.736Z"
+  },
+  {
+    "entityId": 1668,
+    "slug": "ministry-of-defence",
+    "name": "Ministry of Defence",
+    "suggestedPostcode": "SW1A 2HB",
+    "confidence": 1,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/ministry-of-defence",
+        "snippet": "ce Board Member Contact MOD Office address Whitehall London SW1A 2HB United Kingdom Send questions or general enquiries to the M"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1A 2HB",
+        "url": "https://www.gov.uk/government/organisations/ministry-of-defence",
+        "snippet": "ce Board Member Contact MOD Office address Whitehall London SW1A 2HB United Kingdom Send questions or general enquiries to the M"
+      },
+      {
+        "postcode": "GL3 1HW",
+        "url": "https://www.gov.uk/government/organisations/ministry-of-defence",
+        "snippet": "MOD Medal Office Innsworth House Imjin Barracks Gloucester GL3 1HW United Kingdom Email dbs-medals@mod.gov.uk Make a copyright"
+      },
+      {
+        "postcode": "BS34 8JH",
+        "url": "https://www.gov.uk/government/organisations/ministry-of-defence",
+        "snippet": "n Copyright Licensing Poplar 2 #2214 MOD Abbey Wood Bristol BS34 8JH United Kingdom Contact: Make a copyright enquiry or licensi"
+      },
+      {
+        "postcode": "PE28 2EA",
+        "url": "https://www.gov.uk/government/organisations/ministry-of-defence",
+        "snippet": ") Room 00.19, Bldg 666, RAF Wyton Huntingdon Cambridgeshire PE28 2EA United Kingdom Contact: MOD confidential hotline The Minist"
+      },
+      {
+        "postcode": "FY5 3WP",
+        "url": "https://www.gov.uk/government/organisations/ministry-of-defence",
+        "snippet": "Room 6105 Tomlinson House Norcross Lane Thornton-Cleveleys FY5 3WP United Kingdom Email dbsscs-ecfinanceteam@mod.gov.uk Vetera"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:32.677Z"
+  },
+  {
+    "entityId": 1796,
+    "slug": "financial-conduct-authority",
+    "name": "Financial Conduct Authority",
+    "suggestedPostcode": "E20 1JN",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.fca.org.uk/",
+        "snippet": "ost: Financial Conduct Authority 12 Endeavour Square London E20 1JN Contact us What we do About the FCA Enhancing market integr"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "E20 1JN",
+        "url": "https://www.fca.org.uk/",
+        "snippet": "ost: Financial Conduct Authority 12 Endeavour Square London E20 1JN Contact us What we do About the FCA Enhancing market integr"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:49.521Z"
+  },
+  {
+    "entityId": 1832,
+    "slug": "department-for-business-and-trade",
+    "name": "Department for Business and Trade",
+    "suggestedPostcode": "SW1A 2DY",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/department-for-business-and-trade",
+        "snippet": "ess and Trade Old Admiralty Building Admiralty Place London SW1A 2DY United Kingdom Contact: Public enquiries Telephone +44 (0)"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1A 2DY",
+        "url": "https://www.gov.uk/government/organisations/department-for-business-and-trade",
+        "snippet": "ess and Trade Old Admiralty Building Admiralty Place London SW1A 2DY United Kingdom Contact: Public enquiries Telephone +44 (0)"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:50.604Z"
+  },
+  {
+    "entityId": 2898,
+    "slug": "department-for-education",
+    "name": "Department for Education",
+    "suggestedPostcode": "M1 2WD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/department-for-education",
+        "snippet": "tment for Education Piccadilly Gate Store Street Manchester M1 2WD United Kingdom FOI contact form Telephone 0370 000 2288 Ple"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "M1 2WD",
+        "url": "https://www.gov.uk/government/organisations/department-for-education",
+        "snippet": "tment for Education Piccadilly Gate Store Street Manchester M1 2WD United Kingdom FOI contact form Telephone 0370 000 2288 Ple"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:51.379Z"
+  },
+  {
+    "entityId": 3043,
+    "slug": "ministry-of-justice",
+    "name": "Ministry of Justice",
+    "suggestedPostcode": "SW1H 9AJ",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/ministry-of-justice",
+        "snippet": "ficer Contact MOJ General enquiries 102 Petty France London SW1H 9AJ United Kingdom Contact: General enquiries Telephone 0203 33"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1H 9AJ",
+        "url": "https://www.gov.uk/government/organisations/ministry-of-justice",
+        "snippet": "ficer Contact MOJ General enquiries 102 Petty France London SW1H 9AJ United Kingdom Contact: General enquiries Telephone 0203 33"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:45:52.172Z"
+  },
+  {
+    "entityId": 3629,
+    "slug": "valuation-office-agency",
+    "name": "Valuation Office Agency",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:46:01.062Z"
+  },
+  {
+    "entityId": 3705,
+    "slug": "human-tissue-authority",
+    "name": "Human Tissue Authority",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:46:13.372Z"
+  },
+  {
+    "entityId": 5809,
+    "slug": "hm-government-communications-centre",
+    "name": "HM Government Communications Centre",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:46:22.157Z"
+  },
+  {
+    "entityId": 5811,
+    "slug": "government-actuarys-department",
+    "name": "Government Actuary's Department",
+    "suggestedPostcode": "E14 4PU",
+    "confidence": 0.95,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/government-actuarys-department",
+        "snippet": "e address 6th Floor, 10 South Colonnade Canary Wharf London E14 4PU United Kingdom Email enquiries@gad.gov.uk Scotland office Q"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "E14 4PU",
+        "url": "https://www.gov.uk/government/organisations/government-actuarys-department",
+        "snippet": "e address 6th Floor, 10 South Colonnade Canary Wharf London E14 4PU United Kingdom Email enquiries@gad.gov.uk Scotland office Q"
+      },
+      {
+        "postcode": "EH8 8FT",
+        "url": "https://www.gov.uk/government/organisations/government-actuarys-department",
+        "snippet": "tland office Queen Elizabeth House 1 Sibbald Walk Edinburgh EH8 8FT United Kingdom Email enquiries@gad.gov.uk Staff transfers ("
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:46:31.904Z"
+  },
+  {
+    "entityId": 5812,
+    "slug": "civil-aviation-authority",
+    "name": "Civil Aviation Authority",
+    "suggestedPostcode": "RH6 0YR",
+    "confidence": 0.9,
+    "evidence": [
+      {
+        "url": "http://www.caa.co.uk/our-work/information-requests/contact-us/",
+        "snippet": "thority Aviation House Beehive Ringroad Crawley West Sussex RH6 0YR Main Switchboard: 0330 022 1500 (This telephone number can"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "RH6 0YR",
+        "url": "http://www.caa.co.uk/our-work/information-requests/contact-us/",
+        "snippet": "thority Aviation House Beehive Ringroad Crawley West Sussex RH6 0YR Main Switchboard: 0330 022 1500 (This telephone number can"
+      },
+      {
+        "postcode": "E14 4HD",
+        "url": "http://www.caa.co.uk/our-work/information-requests/contact-us/",
+        "snippet": "Aviation Authority 11 Westferry Circus Canary Wharf London E14 4HD Close Our addresses Service of legal proceedings The CAA ac"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:47:01.448Z"
+  },
+  {
+    "entityId": 5813,
+    "slug": "national-crime-agency",
+    "name": "National Crime Agency",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:47:10.506Z"
+  },
+  {
+    "entityId": 5819,
+    "slug": "cabinet-office",
+    "name": "Cabinet Office",
+    "suggestedPostcode": "SW1A 2AS",
+    "confidence": 0.9,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/cabinet-office",
+        "snippet": "ries Correspondence Team Cabinet Office 70 Whitehall London SW1A 2AS United Kingdom Contact: Public enquiries Telephone 020 7276"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1A 2AS",
+        "url": "https://www.gov.uk/government/organisations/cabinet-office",
+        "snippet": "ries Correspondence Team Cabinet Office 70 Whitehall London SW1A 2AS United Kingdom Contact: Public enquiries Telephone 020 7276"
+      },
+      {
+        "postcode": "SW1A 2HQ",
+        "url": "https://www.gov.uk/government/organisations/cabinet-office",
+        "snippet": "request Cabinet Office Room G39, 1 Horse Guards Road London SW1A 2HQ United Kingdom Email foi-team@cabinetoffice.gov.uk For furt"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:47:23.924Z"
+  },
+  {
+    "entityId": 5843,
+    "slug": "department-for-environment-food-rural-affairs",
+    "name": "Department for Environment, Food & Rural Affairs",
+    "suggestedPostcode": "SW1P 4DF",
+    "confidence": 1,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/department-for-environment-food-rural-affairs",
+        "snippet": "fra Defra Helpline Seacole Building 2 Marsham Street London SW1P 4DF United Kingdom Contact: Defra Helpline Telephone (UK only)"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1P 4DF",
+        "url": "https://www.gov.uk/government/organisations/department-for-environment-food-rural-affairs",
+        "snippet": "fra Defra Helpline Seacole Building 2 Marsham Street London SW1P 4DF United Kingdom Contact: Defra Helpline Telephone (UK only)"
+      },
+      {
+        "postcode": "CA3 8DX",
+        "url": "https://www.gov.uk/government/organisations/department-for-environment-food-rural-affairs",
+        "snippet": "et Travel Section Eden Bridge House Lowther Street Carlisle CA3 8DX United Kingdom Email pettravel@apha.gov.uk Pet Travel helpl"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:47:33.582Z"
+  },
+  {
+    "entityId": 5857,
+    "slug": "home-office",
+    "name": "Home Office",
+    "suggestedPostcode": "SW1P 4DF",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/home-office",
+        "snippet": "e Office Direct Communications Unit 2 Marsham Street London SW1P 4DF United Kingdom Contact: Home Office The enquiry form above"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1P 4DF",
+        "url": "https://www.gov.uk/government/organisations/home-office",
+        "snippet": "e Office Direct Communications Unit 2 Marsham Street London SW1P 4DF United Kingdom Contact: Home Office The enquiry form above"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:47:35.756Z"
+  },
+  {
+    "entityId": 5864,
+    "slug": "government-property-agency",
+    "name": "Government Property Agency",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:47:46.941Z"
+  },
+  {
+    "entityId": 6201,
+    "slug": "office-for-national-statistics",
+    "name": "Office for National Statistics",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:47:58.530Z"
+  },
+  {
+    "entityId": 6534,
+    "slug": "ministry-of-housing-communities-local-government",
+    "name": "Ministry of Housing, Communities and Local Government",
+    "suggestedPostcode": "SW1P 4DF",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/ministry-of-housing-communities-local-government",
+        "snippet": "ffice address and general enquiries 2 Marsham Street London SW1P 4DF United Kingdom Contact: Office address and general enquirie"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SW1P 4DF",
+        "url": "https://www.gov.uk/government/organisations/ministry-of-housing-communities-local-government",
+        "snippet": "ffice address and general enquiries 2 Marsham Street London SW1P 4DF United Kingdom Contact: Office address and general enquirie"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:48:00.120Z"
+  },
+  {
+    "entityId": 8135,
+    "slug": "competition-and-markets-authority",
+    "name": "Competition and Markets Authority",
+    "suggestedPostcode": "E14 4QZ",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/competition-and-markets-authority",
+        "snippet": "tion and Markets Authority The Cabot 25 Cabot Square London E14 4QZ United Kingdom Email general.enquiries@cma.gov.uk General e"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "E14 4QZ",
+        "url": "https://www.gov.uk/government/organisations/competition-and-markets-authority",
+        "snippet": "tion and Markets Authority The Cabot 25 Cabot Square London E14 4QZ United Kingdom Email general.enquiries@cma.gov.uk General e"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:48:00.644Z"
+  },
+  {
+    "entityId": 8503,
+    "slug": "maritime-and-coastguard-agency",
+    "name": "Maritime and Coastguard Agency",
+    "suggestedPostcode": "SO15 1EG",
+    "confidence": 1,
+    "evidence": [
+      {
+        "url": "https://www.gov.uk/government/organisations/maritime-and-coastguard-agency",
+        "snippet": "tguard Agency Spring Place, 105 Commercial Road Southampton SO15 1EG United Kingdom Email infoline@mcga.gov.uk Main switchboard"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "SO15 1EG",
+        "url": "https://www.gov.uk/government/organisations/maritime-and-coastguard-agency",
+        "snippet": "tguard Agency Spring Place, 105 Commercial Road Southampton SO15 1EG United Kingdom Email infoline@mcga.gov.uk Main switchboard"
+      },
+      {
+        "postcode": "CF24 5JW",
+        "url": "https://www.gov.uk/government/organisations/maritime-and-coastguard-agency",
+        "snippet": "ritime and Coastguard Agency Anchor Court Keen Road Cardiff CF24 5JW United Kingdom Email uksr@mcga.gov.uk Vessel registration q"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:48:10.796Z"
+  },
+  {
+    "entityId": 10059,
+    "slug": "information-commissioner-s-office",
+    "name": "Information Commissioner's Office",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:48:31.144Z"
+  },
+  {
+    "entityId": 10586,
+    "slug": "food-standards-agency",
+    "name": "Food Standards Agency",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:48:40.713Z"
+  },
+  {
+    "entityId": 10527,
+    "slug": "human-fertilisation-and-embryology-authority",
+    "name": "Human Fertilisation and Embryology Authority",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:48:48.332Z"
+  },
+  {
+    "entityId": 10897,
+    "slug": "lake-district-national-park-authority",
+    "name": "Lake District National Park Authority",
+    "suggestedPostcode": "GL20 8SD",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "candidates": [
+      {
+        "postcode": "GL20 8SD",
+        "url": "https://www.smartsurvey.co.uk/contact",
+        "snippet": "siness Centre, Oakfield Close, Tewkesbury, Gloucestershire, GL20 8SD, United Kingdom Office Hours (UK time) Mon–Fri, 9:00am–5:30"
+      }
+    ],
+    "approved": false,
+    "createdAt": "2026-01-12T11:48:56.779Z"
+  }
+]

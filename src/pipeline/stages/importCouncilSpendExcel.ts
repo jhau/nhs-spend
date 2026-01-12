@@ -199,6 +199,58 @@ export const importCouncilSpendExcelStage: PipelineStage<ImportCouncilSpendExcel
         };
       }
 
+      const REQUIRED_COLUMNS = [
+        "Council name",
+        "Payment date",
+        "Supplier",
+        "Amount",
+      ];
+      for (const sheetName of dataSheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
+          header: 1,
+          defval: null,
+          raw: true,
+        });
+
+        if (rows.length === 0) {
+          const reason = `Sheet '${sheetName}' is empty.`;
+          await ctx.log({
+            level: "error",
+            message: reason,
+            meta: { sheetName },
+          });
+          return { status: "failed" };
+        }
+
+        const headers = rows[0];
+        if (!Array.isArray(headers)) {
+          const reason = `Sheet '${sheetName}' has an invalid header row.`;
+          await ctx.log({
+            level: "error",
+            message: reason,
+            meta: { sheetName },
+          });
+          return { status: "failed" };
+        }
+
+        for (let i = 0; i < REQUIRED_COLUMNS.length; i++) {
+          const expected = REQUIRED_COLUMNS[i];
+          const actual = cleanString(headers[i]);
+          if (actual.toLowerCase() !== expected.toLowerCase()) {
+            const reason = `Sheet '${sheetName}' does not conform to the required format. Expected column '${expected}' at position ${
+              i + 1
+            }, but found '${actual || "empty"}'.`;
+            await ctx.log({
+              level: "error",
+              message: reason,
+              meta: { sheetName, expected, actual, position: i + 1 },
+            });
+            return { status: "failed" };
+          }
+        }
+      }
+
       await ctx.log({
         level: "debug",
         message: `Gathering council and supplier names from data sheets`,
@@ -439,10 +491,17 @@ async function gatherNames(
           councilNameRaw.toLowerCase()
         )
       ) {
-        const key = normaliseName(councilNameRaw);
-        if (!discoveredCouncils.has(key)) {
-          discoveredCouncils.set(key, councilNameRaw);
-          councilCountInSheet++;
+        // Skip obvious non-councils in the council column (likely bad data)
+        const lowerName = councilNameRaw.toLowerCase();
+        const hasCompanySuffix =
+          /\b(ltd|limited|plc|llp|inc|corp|corporation)\b/i.test(lowerName);
+
+        if (!hasCompanySuffix) {
+          const key = normaliseName(councilNameRaw);
+          if (!discoveredCouncils.has(key)) {
+            discoveredCouncils.set(key, councilNameRaw);
+            councilCountInSheet++;
+          }
         }
       }
 
@@ -498,7 +557,7 @@ async function getOrCreateCouncilByGssCode(
     message: `Creating parent council: ${metadata.officialName} (${gssCode})`,
   });
 
-  // Create the entity
+  // Create the entity (upsert to handle pre-existing entities)
   const [newEntity] = await client
     .insert(entities)
     .values({
@@ -508,6 +567,15 @@ async function getOrCreateCouncilByGssCode(
       status: "active",
       latitude: metadata.latitude ?? null,
       longitude: metadata.longitude ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [entities.entityType, entities.registryId],
+      set: {
+        name: metadata.officialName,
+        latitude: metadata.latitude ?? null,
+        longitude: metadata.longitude ?? null,
+        updatedAt: new Date(),
+      },
     })
     .returning({ id: entities.id });
 
@@ -522,28 +590,58 @@ async function getOrCreateCouncilByGssCode(
     );
   }
 
-  // Create the council record
-  await client.insert(councils).values({
-    entityId: newEntity.id,
-    gssCode: metadata.gssCode || null,
-    onsCode: metadata.onsCode || null,
-    councilType: metadata.councilType || "unknown",
-    tier: metadata.tier || null,
-    homepageUrl: metadata.homepageUrl || null,
-    region: metadata.region || null,
-    nation: metadata.nation || null,
-    parentEntityId,
-  });
+  // Create the council record (upsert by entityId)
+  await client
+    .insert(councils)
+    .values({
+      entityId: newEntity.id,
+      gssCode: metadata.gssCode || null,
+      onsCode: metadata.onsCode || null,
+      councilType: metadata.councilType || "unknown",
+      tier: metadata.tier || null,
+      homepageUrl: metadata.homepageUrl || null,
+      region: metadata.region || null,
+      nation: metadata.nation || null,
+      parentEntityId,
+    })
+    .onConflictDoUpdate({
+      target: [councils.entityId],
+      set: {
+        gssCode: metadata.gssCode || null,
+        onsCode: metadata.onsCode || null,
+        councilType: metadata.councilType || "unknown",
+        tier: metadata.tier || null,
+        homepageUrl: metadata.homepageUrl || null,
+        region: metadata.region || null,
+        nation: metadata.nation || null,
+        parentEntityId,
+        fetchedAt: new Date(),
+      },
+    });
 
-  // Create the buyer record
-  await client.insert(buyers).values({
-    name: metadata.officialName,
-    entityId: newEntity.id,
-    matchStatus: "matched",
-    matchConfidence: "1.00",
-    matchAttemptedAt: new Date(),
-    officialWebsite: metadata.homepageUrl || null,
-  });
+  // Create the buyer record (upsert by name)
+  const [createdBuyer] = await client
+    .insert(buyers)
+    .values({
+      name: metadata.officialName,
+      entityId: newEntity.id,
+      matchStatus: "matched",
+      matchConfidence: "1.00",
+      matchAttemptedAt: new Date(),
+      officialWebsite: metadata.homepageUrl || null,
+    })
+    .onConflictDoUpdate({
+      target: [buyers.name],
+      set: {
+        entityId: newEntity.id,
+        matchStatus: "matched",
+        matchConfidence: "1.00",
+        matchAttemptedAt: new Date(),
+        officialWebsite: metadata.homepageUrl || null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ id: buyers.id });
 
   // Cache the entity ID
   entityIdByGssCode.set(gssCode, newEntity.id);
@@ -575,14 +673,14 @@ async function syncCouncils(
     .select({
       id: buyers.id,
       name: buyers.name,
-      entityId: buyers.entityId,
+      entityId: entities.id,
       entityName: entities.name,
       registryId: entities.registryId,
       gssCode: councils.gssCode,
     })
-    .from(buyers)
-    .leftJoin(entities, eq(buyers.entityId, entities.id))
-    .leftJoin(councils, eq(councils.entityId, entities.id))
+    .from(entities)
+    .leftJoin(buyers, eq(entities.id, buyers.entityId))
+    .leftJoin(councils, eq(entities.id, councils.entityId))
     .where(eq(entities.entityType, "council"));
 
   const idByKey = new Map<string, number>();
@@ -592,25 +690,25 @@ async function syncCouncils(
 
   for (const row of existing) {
     // Use buyer name for lookup key
-    if (row.name) {
+    if (row.name && row.id) {
       idByKey.set(normaliseName(row.name), row.id);
     }
     // Also index by GSS code and registry_id for duplicate detection
     if (row.gssCode) {
-      idByGssCode.set(row.gssCode, row.id);
+      if (row.id) idByGssCode.set(row.gssCode, row.id);
       entityIdByGssCode.set(row.gssCode, row.entityId);
       // Also add the official CSV name to the lookup
       const officialName = officialNameByGss.get(row.gssCode);
-      if (officialName) {
+      if (officialName && row.id) {
         idByKey.set(normaliseName(officialName), row.id);
       }
     }
     if (row.registryId) {
-      idByGssCode.set(row.registryId, row.id);
+      if (row.id) idByGssCode.set(row.registryId, row.id);
       entityIdByGssCode.set(row.registryId, row.entityId);
       // Also add the official CSV name for registry_id (which is often GSS code)
       const officialName = officialNameByGss.get(row.registryId);
-      if (officialName) {
+      if (officialName && row.id) {
         idByKey.set(normaliseName(officialName), row.id);
       }
     }
@@ -706,19 +804,44 @@ async function syncCouncils(
         latitude: metadata.latitude ?? null,
         longitude: metadata.longitude ?? null,
       })
+      .onConflictDoUpdate({
+        target: [entities.entityType, entities.registryId],
+        set: {
+          name: metadata.officialName || name,
+          latitude: metadata.latitude ?? null,
+          longitude: metadata.longitude ?? null,
+          updatedAt: new Date(),
+        },
+      })
       .returning({ id: entities.id });
 
-    await client.insert(councils).values({
-      entityId: newEntity.id,
-      gssCode: metadata.gssCode || null,
-      onsCode: metadata.onsCode || null,
-      councilType: metadata.councilType || "unknown",
-      tier: metadata.tier || null,
-      homepageUrl: metadata.homepageUrl || null,
-      region: metadata.region || null,
-      nation: metadata.nation || null,
-      parentEntityId,
-    });
+    await client
+      .insert(councils)
+      .values({
+        entityId: newEntity.id,
+        gssCode: metadata.gssCode || null,
+        onsCode: metadata.onsCode || null,
+        councilType: metadata.councilType || "unknown",
+        tier: metadata.tier || null,
+        homepageUrl: metadata.homepageUrl || null,
+        region: metadata.region || null,
+        nation: metadata.nation || null,
+        parentEntityId,
+      })
+      .onConflictDoUpdate({
+        target: [councils.entityId],
+        set: {
+          gssCode: metadata.gssCode || null,
+          onsCode: metadata.onsCode || null,
+          councilType: metadata.councilType || "unknown",
+          tier: metadata.tier || null,
+          homepageUrl: metadata.homepageUrl || null,
+          region: metadata.region || null,
+          nation: metadata.nation || null,
+          parentEntityId,
+          fetchedAt: new Date(),
+        },
+      });
 
     const [created] = await client
       .insert(buyers)
@@ -729,6 +852,17 @@ async function syncCouncils(
         matchConfidence: "1.00",
         matchAttemptedAt: new Date(),
         officialWebsite: metadata.homepageUrl || null,
+      })
+      .onConflictDoUpdate({
+        target: [buyers.name],
+        set: {
+          entityId: newEntity.id,
+          matchStatus: "matched",
+          matchConfidence: "1.00",
+          matchAttemptedAt: new Date(),
+          officialWebsite: metadata.homepageUrl || null,
+          updatedAt: new Date(),
+        },
       })
       .returning({ id: buyers.id });
 

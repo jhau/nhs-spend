@@ -13,6 +13,7 @@ import {
   importCouncilSpendExcelStage,
   importGovDeptSpendExcelStage,
   matchSuppliersStage,
+  enrichEntityLocationsStage,
 } from "./stages";
 
 const queue: number[] = [];
@@ -66,7 +67,7 @@ async function runOne(runId: number) {
       ? importGovDeptSpendExcelStage
       : importSpendExcelStage;
 
-  const stages = [importStage, matchSuppliersStage];
+  const stages = [importStage, matchSuppliersStage, enrichEntityLocationsStage];
 
   await logger.log({
     level: "debug",

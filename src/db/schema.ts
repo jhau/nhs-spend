@@ -41,6 +41,12 @@ export const entities = pgTable(
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
 
+    // UK geography enrichment (derived primarily from postcode)
+    ukCountry: text("uk_country"),
+    ukRegion: text("uk_region"),
+    locationSource: text("location_source"),
+    locationUpdatedAt: timestamp("location_updated_at", { withTimezone: true }),
+
     // AI Summary
     aiSummary: text("ai_summary"),
     aiNews: jsonb("ai_news").$type<{ title: string; link: string }[]>(),

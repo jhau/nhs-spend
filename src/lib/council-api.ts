@@ -643,6 +643,25 @@ export async function searchCouncilMetadata(
 ): Promise<CouncilMetadata | null> {
   const normalizedName = name.replace(/\s+/gu, " ").trim();
 
+  // Heuristic: If it looks like a company or doesn't look like a council, skip it
+  const lowerName = normalizedName.toLowerCase();
+  const hasCouncilKeyword =
+    lowerName.includes("council") ||
+    lowerName.includes("authority") ||
+    lowerName.includes("borough") ||
+    lowerName.includes("district") ||
+    lowerName.includes("parish");
+
+  const hasCompanySuffix =
+    /\b(ltd|limited|plc|llp|inc|corp|corporation)\b/i.test(lowerName);
+
+  if (hasCompanySuffix || (!hasCouncilKeyword && normalizedName.length > 50)) {
+    console.debug("[searchCouncilMetadata] Skipping obvious non-council name", {
+      name: normalizedName,
+    });
+    return null;
+  }
+
   try {
     console.info("[searchCouncilMetadata] Starting lookup", {
       query: normalizedName,

@@ -34,6 +34,22 @@ AI_MODEL=google/gemini-3-pro
 OPENROUTER_HTTP_REFERER=http://localhost:3000
 OPENROUTER_X_TITLE=nhs-spend
 
+# Entity location enrichment (postcodes.io)
+POSTCODES_IO_BATCH_DELAY_MS=300
+POSTCODES_IO_MAX_RETRIES=3
+POSTCODES_IO_BACKOFF_BASE_MS=500
+
+# Background jobs (optional)
+ENABLE_BACKGROUND_MATCHER=false
+ENABLE_BACKGROUND_ENTITY_ENRICHER=false
+ENTITY_ENRICHER_INTERVAL_MS=30000
+ENTITY_ENRICHER_POSTCODE_BATCH_SIZE=100
+ENTITY_ENRICHER_MAX_ENTITIES=5000
+
+# Gov dept location suggestions (optional; used by scripts)
+GOV_UK_FETCH_INTERVAL_MS=1000
+GOV_DEPT_LOCATION_SUGGESTIONS_PATH=data/gov-dept-location-suggestions.json
+
 # Optional guardrail tuning
 SQL_STATEMENT_TIMEOUT_MS=1500
 SQL_LOCK_TIMEOUT_MS=250
@@ -131,3 +147,39 @@ pnpm data:import -- --file "/Users/jeff/work/github/nhs-spend/data/1_England_NHS
 - The script synchronises the `organisations` table from the `Trusts` sheet and creates any missing trusts found in data sheets.
 - Payment dates formatted as `YY-MMM` (for example `22-Apr`) are interpreted as the first day of that month (`2022-04-01`).
 - Amounts are normalised, currency symbols are stripped, and raw values are stored alongside the parsed numeric amount for auditing.
+
+## Entity location enrichment (postcode → UK region + lat/lon)
+
+The schema stores canonical location fields on `entities` (`postal_code`, `latitude`, `longitude`) and enrichment fields (`uk_region`, `uk_country`).\n+
+### One-shot backfill
+
+```bash
+npx tsx scripts/enrich-entity-locations.ts
+```
+
+Optional tuning:
+- `ENRICH_MAX_ENTITIES`
+- `ENRICH_MAX_DISTINCT_POSTCODES` (max 100 per request to postcodes.io)
+
+### Pipeline stage
+
+The web pipeline runner now includes an `enrichEntityLocations` stage after supplier matching.\n+
+### Background job
+
+Enable continuous backfill during `next dev` / `next start` (Node.js runtime only):\n+
+```bash
+ENABLE_BACKGROUND_ENTITY_ENRICHER=true
+```
+
+### Government departments (LLM suggestions + human approval)
+
+1) Generate suggestions (no DB writes):\n+
+```bash
+npx tsx scripts/suggest-gov-dept-locations.ts
+```
+
+2) Edit the JSON file and set `approved: true` for rows you want to apply.\n+
+3) Apply approved suggestions (writes postcodes, then runs postcodes.io enrichment):\n+
+```bash
+npx tsx scripts/apply-gov-dept-location-suggestions.ts data/gov-dept-location-suggestions.json
+```

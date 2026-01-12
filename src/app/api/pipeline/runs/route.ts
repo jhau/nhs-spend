@@ -43,19 +43,29 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") ?? 20)));
+  const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 20)));
+  const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0));
   const assetIdParam = url.searchParams.get("assetId");
 
   const baseQuery = db
     .select()
     .from(pipelineRuns);
 
-  const query = assetIdParam
-    ? baseQuery
-        .where(eq(pipelineRuns.assetId, Number(assetIdParam)))
-        .orderBy(desc(pipelineRuns.createdAt))
-        .limit(limit)
-    : baseQuery.orderBy(desc(pipelineRuns.createdAt)).limit(limit);
+  const whereClause = assetIdParam ? eq(pipelineRuns.assetId, Number(assetIdParam)) : undefined;
+
+  const totalCount = await db.$count(pipelineRuns, whereClause);
+
+  const query = db
+    .select()
+    .from(pipelineRuns);
+
+  if (whereClause) {
+    query.where(whereClause);
+  }
+
+  query.orderBy(desc(pipelineRuns.createdAt))
+    .limit(limit)
+    .offset(offset);
 
   const runs = await query;
 
@@ -76,6 +86,11 @@ export async function GET(req: Request) {
     assetOriginalName: run.assetId ? assetMap.get(run.assetId) ?? null : null,
   }));
 
-  return NextResponse.json({ runs: runsWithAssets });
+  return NextResponse.json({ 
+    runs: runsWithAssets,
+    totalCount,
+    limit,
+    offset
+  });
 }
 

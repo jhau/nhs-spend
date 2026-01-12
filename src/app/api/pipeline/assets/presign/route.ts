@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 
 import { NextResponse } from "next/server";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { eq, and, isNotNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { pipelineAssets } from "@/db/schema";
-import { presignObjectUrl } from "@/pipeline/objectStorage";
+import { presignObjectUrl, checkObjectExists } from "@/pipeline/objectStorage";
 
 type PresignRequest = {
   originalName: string;
@@ -27,16 +27,27 @@ export async function POST(req: Request) {
 
   // Check for duplicate checksum if provided
   if (body.checksum && !body.force) {
-    const existingAssets = await db
+    const candidateAssets = await db
       .select({
         id: pipelineAssets.id,
         originalName: pipelineAssets.originalName,
         sizeBytes: pipelineAssets.sizeBytes,
+        objectKey: pipelineAssets.objectKey,
         createdAt: pipelineAssets.createdAt,
       })
       .from(pipelineAssets)
       .where(and(eq(pipelineAssets.checksum, body.checksum), isNotNull(pipelineAssets.checksum)))
-      .limit(5);
+      .orderBy(sql`${pipelineAssets.createdAt} DESC`)
+      .limit(10);
+
+    // Filter to only those that actually exist in object storage
+    const existingAssets = [];
+    for (const asset of candidateAssets) {
+      if (await checkObjectExists(asset.objectKey)) {
+        existingAssets.push(asset);
+      }
+      if (existingAssets.length >= 5) break;
+    }
 
     if (existingAssets.length > 0) {
       return NextResponse.json(
