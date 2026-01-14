@@ -105,8 +105,18 @@ export const Sidebar = () => {
           />
 
           <SidebarSection title="Spend Data" />
-          <SidebarItem icon={Building2} label="Companies" href="/companies" />
           <SidebarItem icon={Users} label="Buyers" href="/buyers" active />
+          <SidebarItem
+            icon={Users}
+            label="Suppliers"
+            href="/suppliers"
+            active
+          />
+          <SidebarItem
+            icon={Building2}
+            label="Verified Entities"
+            href="/entities"
+          />
 
           {/* <SidebarSection title="Discover" />
           <SidebarItem
