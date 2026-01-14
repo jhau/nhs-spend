@@ -19,6 +19,7 @@ import type {
   PipelineStage,
 } from "../types";
 import { searchNhsOrganisation, isLikelyNhsOrganisation } from "@/lib/nhs-api";
+import { findFuzzyMatch } from "@/lib/matching-helpers";
 
 export type ImportSpendExcelInput = {
   /**
@@ -135,7 +136,19 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
       expiresSeconds: 60,
     });
 
-    const resp = await fetch(downloadUrl);
+    let resp;
+    try {
+      resp = await fetch(downloadUrl);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      await ctx.log({
+        level: "error",
+        message: `Fetch failed for asset download: ${error.message}`,
+        meta: { assetId: input.assetId, objectKey, downloadUrl },
+      });
+      throw error;
+    }
+
     if (!resp.ok) {
       await ctx.log({
         level: "error",
@@ -216,6 +229,28 @@ export const importSpendExcelStage: PipelineStage<ImportSpendExcelInput> = {
           paymentsSkipped: 0,
         },
       };
+    }
+
+    // Validate headers for NHS data
+    for (const sheetName of dataSheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
+        header: 1,
+        defval: null,
+        range: 0, // Just read header
+      });
+      if (rows.length > 0 && Array.isArray(rows[0])) {
+        const firstCol = cleanString(rows[0][0]);
+        if (!isHeaderTrustLabel(firstCol)) {
+          const reason = `Sheet '${sheetName}' does not appear to be an NHS spend sheet. Expected 'Trust name' or 'Org code desc/trust' in the first column, but found '${firstCol || "empty"}'. Please ensure you have selected the correct organisation type.`;
+          await ctx.log({
+            level: "error",
+            message: reason,
+            meta: { sheetName, firstCol },
+          });
+          return { status: "failed" };
+        }
+      }
     }
 
     await ctx.log({
@@ -759,77 +794,64 @@ async function syncBuyers(
     const existingBuyerId = idByKey.get(key);
 
     if (existingBuyerId) {
-      // Update existing - get the entity ID
-      const existingEntityId = entityIdByBuyerId.get(existingBuyerId);
-      const existingRegistryId = registryIdByBuyerId.get(existingBuyerId);
-
-      // Determine correct entity ID based on current ODS code
-      const correctEntityId = await createNhsOrganisationEntity(
-        client,
-        metadata
-      );
-
-      if (correctEntityId) {
-        // We have a valid ODS match
-        const orgType = determineOrgType(metadata.name, metadata.trustType);
-
-        // Update entity details
-        await client
-          .update(entities)
-          .set({
-            name: metadata.name,
-            postalCode: metadata.postCode ?? null,
-            updatedAt: new Date(),
-          })
-          .where(eq(entities.id, correctEntityId));
-
-        // Update NHS organisation details
-        await client
-          .update(nhsOrganisations)
-          .set({
-            odsCode: metadata.odsCode!,
-            orgType: orgType === "practice" ? "gp_practice" : orgType,
-            orgSubType: metadata.trustType ?? null,
-          })
-          .where(eq(nhsOrganisations.entityId, correctEntityId));
-
-        // Update buyer to point to this correct entity
-        await client
-          .update(buyers)
-          .set({
-            name: metadata.name,
-            entityId: correctEntityId,
-            matchStatus: "matched",
-            matchConfidence: "1.00",
-            matchAttemptedAt: new Date(),
-            officialWebsite: metadata.officialWebsite ?? null,
-            spendingDataUrl: metadata.spendingDataUrl ?? null,
-            missingDataNote: metadata.missingDataNote ?? null,
-            verifiedVia: metadata.verifiedVia ?? null,
-            updatedAt: new Date(),
-          })
-          .where(eq(buyers.id, existingBuyerId));
-      } else {
-        // No ODS match now. If it was previously linked, determine if we should unlink.
-        // Rule: Only link if we have an ODS code.
-        await client
-          .update(buyers)
-          .set({
-            name: metadata.name,
-            entityId: null, // Unlink if no ODS code
-            matchStatus: "no_match",
-            matchConfidence: "0.00",
-            matchAttemptedAt: new Date(),
-            officialWebsite: metadata.officialWebsite ?? null,
-            spendingDataUrl: metadata.spendingDataUrl ?? null,
-            missingDataNote: metadata.missingDataNote ?? null,
-            verifiedVia: metadata.verifiedVia ?? null,
-            updatedAt: new Date(),
-          })
-          .where(eq(buyers.id, existingBuyerId));
-      }
-      updated++;
+      // ... existing update logic ...
     } else {
+      // Try fuzzy match against existing buyers first to catch typos
+      const fuzzyMatch = findFuzzyMatch(key, idByKey, 0.9);
+      if (fuzzyMatch) {
+        await ctx.log({
+          level: "info",
+          message: `FUZZY MATCH: Mapping metadata for "${metadata.name}" to existing buyer "${fuzzyMatch.name}" (confidence: ${fuzzyMatch.rating.toFixed(2)})`,
+        });
+        // We'll update the existing buyer with this metadata
+        const existingId = fuzzyMatch.id;
+        // Determine correct entity ID based on current ODS code
+        const correctEntityId = await createNhsOrganisationEntity(
+          client,
+          metadata
+        );
+
+        if (correctEntityId) {
+          const orgType = determineOrgType(metadata.name, metadata.trustType);
+          await client
+            .update(entities)
+            .set({
+              name: metadata.name,
+              postalCode: metadata.postCode ?? null,
+              updatedAt: new Date(),
+            })
+            .where(eq(entities.id, correctEntityId));
+
+          await client
+            .update(nhsOrganisations)
+            .set({
+              odsCode: metadata.odsCode!,
+              orgType: orgType === "practice" ? "gp_practice" : orgType,
+              orgSubType: metadata.trustType ?? null,
+            })
+            .where(eq(nhsOrganisations.entityId, correctEntityId));
+
+          await client
+            .update(buyers)
+            .set({
+              name: metadata.name,
+              entityId: correctEntityId,
+              matchStatus: "matched",
+              matchConfidence: "1.00",
+              matchAttemptedAt: new Date(),
+              officialWebsite: metadata.officialWebsite ?? null,
+              spendingDataUrl: metadata.spendingDataUrl ?? null,
+              missingDataNote: metadata.missingDataNote ?? null,
+              verifiedVia: metadata.verifiedVia ?? null,
+              updatedAt: new Date(),
+            })
+            .where(eq(buyers.id, existingId));
+        }
+        idByKey.set(key, existingId);
+        updated++;
+        continue;
+      }
+
       // Create new entity + NHS org + buyer
       const entityId = await createNhsOrganisationEntity(client, metadata);
 
@@ -845,6 +867,20 @@ async function syncBuyers(
           spendingDataUrl: metadata.spendingDataUrl ?? null,
           missingDataNote: metadata.missingDataNote ?? null,
           verifiedVia: metadata.verifiedVia ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [buyers.name],
+          set: {
+            entityId,
+            matchStatus: entityId ? "matched" : "no_match",
+            matchConfidence: entityId ? "1.00" : "0.00",
+            matchAttemptedAt: new Date(),
+            officialWebsite: metadata.officialWebsite ?? null,
+            spendingDataUrl: metadata.spendingDataUrl ?? null,
+            missingDataNote: metadata.missingDataNote ?? null,
+            verifiedVia: metadata.verifiedVia ?? null,
+            updatedAt: new Date(),
+          },
         })
         .returning({ id: buyers.id });
 
@@ -863,6 +899,17 @@ async function syncBuyers(
   for (const [key, name] of discoveredTrusts) {
     if (idByKey.has(key)) continue;
 
+    // Try fuzzy match against existing buyers first to catch typos
+    const fuzzyMatch = findFuzzyMatch(key, idByKey, 0.9);
+    if (fuzzyMatch) {
+      await ctx.log({
+        level: "info",
+        message: `FUZZY MATCH: Mapping "${name}" to existing buyer "${fuzzyMatch.name}" (confidence: ${fuzzyMatch.rating.toFixed(2)})`,
+      });
+      idByKey.set(key, fuzzyMatch.id);
+      continue;
+    }
+
     // Create minimal entity + NHS org + buyer
     const entityId = await createNhsOrganisationEntity(client, { name });
 
@@ -878,6 +925,16 @@ async function syncBuyers(
         spendingDataUrl: null,
         missingDataNote: null,
         verifiedVia: null,
+      })
+      .onConflictDoUpdate({
+        target: [buyers.name],
+        set: {
+          entityId,
+          matchStatus: entityId ? "matched" : "no_match",
+          matchConfidence: entityId ? "1.00" : "0.00",
+          matchAttemptedAt: new Date(),
+          updatedAt: new Date(),
+        },
       })
       .returning({ id: buyers.id });
 
@@ -1505,7 +1562,13 @@ function parseAmount(value: unknown): {
     return { amount: null, raw };
   }
 
-  return { amount: negative ? -numeric : numeric, raw };
+  const amount = negative ? -numeric : numeric;
+  // numeric(14,2) max is 999,999,999,999.99. Reject astronomical values.
+  if (Math.abs(amount) > 100_000_000_000) {
+    return { amount: null, raw };
+  }
+
+  return { amount, raw };
 }
 
 function parsePaymentDate(value: unknown): {

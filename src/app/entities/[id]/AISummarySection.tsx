@@ -10,24 +10,30 @@ interface AISummaryData {
 export function AISummarySection({ entityId, initialData }: { entityId: number, initialData: AISummaryData | null }) {
   const [data, setData] = useState<AISummaryData | null>(initialData);
   const [loading, setLoading] = useState(!initialData);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(false);
+
+  async function fetchSummary(force: boolean = false) {
+    if (force) setIsRefreshing(true);
+    else setLoading(true);
+    
+    try {
+      const res = await fetch(`/api/entities/${entityId}/ai-summary${force ? "?force=true" : ""}`);
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setData(json);
+      setError(false);
+    } catch (err) {
+      setError(true);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  }
 
   useEffect(() => {
     if (initialData && initialData.summary) {
       return;
-    }
-
-    async function fetchSummary() {
-      try {
-        const res = await fetch(`/api/entities/${entityId}/ai-summary`);
-        if (!res.ok) throw new Error();
-        const json = await res.json();
-        setData(json);
-      } catch (err) {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
     }
 
     fetchSummary();
@@ -47,12 +53,48 @@ export function AISummarySection({ entityId, initialData }: { entityId: number, 
   if (error || !data || !data.summary) return null;
 
   return (
-    <div style={{ ...styles.card, marginBottom: "24px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-        <span style={{ fontSize: "20px" }}>✨</span>
-        <h2 style={styles.cardTitle}>AI Insights & News</h2>
+    <div style={{ ...styles.card, marginBottom: "24px", position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "20px" }}>✨</span>
+          <h2 style={styles.cardTitle}>AI Insights & News</h2>
+          {isRefreshing && (
+            <div style={{ ...styles.spinner, width: "14px", height: "14px", borderWidth: "1.5px" }} />
+          )}
+        </div>
+        <button 
+          onClick={() => fetchSummary(true)}
+          disabled={isRefreshing}
+          style={{
+            fontSize: "12px",
+            color: "#6b7280",
+            backgroundColor: "transparent",
+            border: "1px solid #e5e7eb",
+            borderRadius: "6px",
+            padding: "4px 8px",
+            cursor: isRefreshing ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            transition: "all 0.2s"
+          }}
+          onMouseOver={(e) => {
+            if (!isRefreshing) {
+              e.currentTarget.style.backgroundColor = "#f9fafb";
+              e.currentTarget.style.borderColor = "#d1d5db";
+            }
+          }}
+          onMouseOut={(e) => {
+            if (!isRefreshing) {
+              e.currentTarget.style.backgroundColor = "transparent";
+              e.currentTarget.style.borderColor = "#e5e7eb";
+            }
+          }}
+        >
+          {isRefreshing ? "Regenerating..." : "Regenerate"}
+        </button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px", opacity: isRefreshing ? 0.6 : 1, transition: "opacity 0.2s" }}>
         <div style={{ fontSize: "15px", lineHeight: "1.6", color: "#374151" }}>
           {data.summary}
         </div>

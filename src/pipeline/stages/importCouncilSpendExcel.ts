@@ -24,6 +24,7 @@ import {
   lookupCouncilByGssCode,
   type CouncilMetadata,
 } from "@/lib/council-api";
+import { findFuzzyMatch } from "@/lib/matching-helpers";
 
 export type ImportCouncilSpendExcelInput = {
   assetId: number;
@@ -125,7 +126,19 @@ export const importCouncilSpendExcelStage: PipelineStage<ImportCouncilSpendExcel
         expiresSeconds: 60,
       });
 
-      const resp = await fetch(downloadUrl);
+      let resp;
+      try {
+        resp = await fetch(downloadUrl);
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        await ctx.log({
+          level: "error",
+          message: `Fetch failed for asset download: ${error.message}`,
+          meta: { assetId: input.assetId, objectKey, downloadUrl },
+        });
+        throw error;
+      }
+
       if (!resp.ok) {
         await ctx.log({
           level: "error",
@@ -238,9 +251,11 @@ export const importCouncilSpendExcelStage: PipelineStage<ImportCouncilSpendExcel
           const expected = REQUIRED_COLUMNS[i];
           const actual = cleanString(headers[i]);
           if (actual.toLowerCase() !== expected.toLowerCase()) {
-            const reason = `Sheet '${sheetName}' does not conform to the required format. Expected column '${expected}' at position ${
+            const reason = `Sheet '${sheetName}' does not appear to be a Council spend sheet. Expected column '${expected}' at position ${
               i + 1
-            }, but found '${actual || "empty"}'.`;
+            }, but found '${
+              actual || "empty"
+            }'. Please ensure you have selected the correct organisation type.`;
             await ctx.log({
               level: "error",
               message: reason,
@@ -735,6 +750,20 @@ async function syncCouncils(
       continue;
     }
 
+    // Try fuzzy match against existing buyers first to catch typos
+    const fuzzyMatch = findFuzzyMatch(key, idByKey, 0.9);
+    if (fuzzyMatch) {
+      await ctx.log({
+        level: "info",
+        message: `FUZZY MATCH: Mapping "${name}" to existing buyer "${
+          fuzzyMatch.name
+        }" (confidence: ${fuzzyMatch.rating.toFixed(2)})`,
+      });
+      idByKey.set(key, fuzzyMatch.id);
+      skippedExisting++;
+      continue;
+    }
+
     // Only fetch metadata for NEW councils
     await ctx.log({
       level: "debug",
@@ -1141,13 +1170,19 @@ async function importSpendSheets(
 
 // Reuse helper functions from importSpendExcel.ts logic
 function parseAmount(value: unknown) {
-  if (typeof value === "number")
+  if (typeof value === "number") {
+    // numeric(14,2) max is 999,999,999,999.99. Reject astronomical values.
+    if (Math.abs(value) > 100_000_000_000)
+      return { amount: null, raw: value.toString() };
     return { amount: value, raw: value.toString() };
+  }
   const raw = cleanString(value);
   if (!raw) return { amount: null, raw: null };
   const cleaned = raw.replace(/[£,]/g, "");
   const numeric = Number(cleaned);
-  return { amount: isNaN(numeric) ? null : numeric, raw };
+  if (isNaN(numeric) || Math.abs(numeric) > 100_000_000_000)
+    return { amount: null, raw };
+  return { amount: numeric, raw };
 }
 
 function parsePaymentDate(value: unknown) {

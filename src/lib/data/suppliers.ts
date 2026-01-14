@@ -31,6 +31,7 @@ export async function getSuppliers(options: {
   search?: string;
   sort?: string;
   order?: "asc" | "desc";
+  skipCounts?: boolean;
 }): Promise<SuppliersListResponse> {
   const { 
     limit = 20, 
@@ -38,8 +39,29 @@ export async function getSuppliers(options: {
     status, 
     search, 
     sort = "totalSpend", 
-    order = "desc" 
+    order = "desc",
+    skipCounts = false
   } = options;
+
+  console.time("getSuppliers.total");
+
+  const filters = [];
+  if (status && status !== "all") {
+    filters.push(eq(suppliers.matchStatus, status));
+  }
+  if (search) {
+    filters.push(ilike(suppliers.name, `%${search}%`));
+  }
+
+  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+
+  console.time("getSuppliers.statsQuery");
+  // Subquery for filtered supplier IDs to limit aggregation scope
+  const filteredSupplierIds = db
+    .select({ id: suppliers.id })
+    .from(suppliers)
+    .where(whereClause)
+    .as("filtered_supplier_ids");
 
   const statsQuery = db
     .select({
@@ -48,9 +70,12 @@ export async function getSuppliers(options: {
       transactionCount: sql<number>`count(*)`.as("transaction_count"),
     })
     .from(spendEntries)
+    .innerJoin(filteredSupplierIds, eq(spendEntries.supplierId, filteredSupplierIds.id))
     .groupBy(spendEntries.supplierId)
     .as("stats");
+  console.timeEnd("getSuppliers.statsQuery");
 
+  console.time("getSuppliers.mainQuery");
   let query = db
     .select({
       id: suppliers.id,
@@ -68,43 +93,47 @@ export async function getSuppliers(options: {
     .leftJoin(entities, eq(suppliers.entityId, entities.id))
     .leftJoin(companies, eq(entities.id, companies.entityId))
     .leftJoin(statsQuery, eq(suppliers.id, statsQuery.supplierId))
+    .where(whereClause)
     .$dynamic();
-
-  const filters = [];
-  if (status && status !== "all") {
-    filters.push(eq(suppliers.matchStatus, status));
-  }
-  if (search) {
-    filters.push(ilike(suppliers.name, `%${search}%`));
-  }
-
-  if (filters.length > 0) {
-    query = query.where(and(...filters));
-  }
 
   const suppliersRows = await query
     .orderBy(order === "desc" ? desc(statsQuery.totalSpend) : statsQuery.totalSpend)
     .limit(limit)
     .offset(offset);
+  console.timeEnd("getSuppliers.mainQuery");
 
   // Counts for tabs/summary
-  const searchFilter = search ? ilike(suppliers.name, `%${search}%`) : undefined;
+  let totalCount = 0;
+  let matchedCount = 0;
+  let pendingCount = 0;
 
-  const [totalCountResult, matchedCountResult, pendingCountResult] = await Promise.all([
-    db.select({ count: count() }).from(suppliers).where(searchFilter ? searchFilter : undefined),
-    db.select({ count: count() }).from(suppliers).where(
-      and(eq(suppliers.matchStatus, "matched"), searchFilter)
-    ),
-    db.select({ count: count() }).from(suppliers).where(
-      and(eq(suppliers.matchStatus, "pending"), searchFilter)
-    ),
-  ]);
+  if (!skipCounts) {
+    console.time("getSuppliers.counts");
+    const searchFilter = search ? ilike(suppliers.name, `%${search}%`) : undefined;
+
+    const [totalCountResult, matchedCountResult, pendingCountResult] = await Promise.all([
+      db.select({ count: count() }).from(suppliers).where(searchFilter ? searchFilter : undefined),
+      db.select({ count: count() }).from(suppliers).where(
+        and(eq(suppliers.matchStatus, "matched"), searchFilter)
+      ),
+      db.select({ count: count() }).from(suppliers).where(
+        and(eq(suppliers.matchStatus, "pending"), searchFilter)
+      ),
+    ]);
+    
+    totalCount = totalCountResult[0]?.count || 0;
+    matchedCount = matchedCountResult[0]?.count || 0;
+    pendingCount = pendingCountResult[0]?.count || 0;
+    console.timeEnd("getSuppliers.counts");
+  }
+
+  console.timeEnd("getSuppliers.total");
 
   return {
     suppliers: suppliersRows as any[],
-    totalCount: totalCountResult[0]?.count || 0,
-    matchedCount: matchedCountResult[0]?.count || 0,
-    pendingCount: pendingCountResult[0]?.count || 0,
+    totalCount,
+    matchedCount,
+    pendingCount,
     limit,
     offset,
   };

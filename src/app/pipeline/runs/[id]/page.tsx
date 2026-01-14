@@ -154,15 +154,21 @@ type Metrics = {
   trustsInserted?: number;
   trustsUpdated?: number;
   trustsCreatedWithoutMetadata?: number;
+  buyersInserted?: number;
+  buyersUpdated?: number;
+  buyersCreatedWithoutMetadata?: number;
   councilsInserted?: number;
   councilsUpdated?: number;
+  govDeptsInserted?: number;
   suppliersInserted?: number;
   sheetsProcessed?: number;
   paymentsInserted?: number;
   paymentsSkipped?: number;
   skippedReasons?: Record<string, number>;
   dryRun?: boolean;
+  trustsDiscovered?: number;
   councilsDiscovered?: number;
+  govDeptsDiscovered?: number;
   suppliersDiscovered?: number;
   // Match stage metrics
   totalProcessed?: number;
@@ -193,9 +199,9 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
           </div>
           <div className="rounded-lg border bg-card p-4 space-y-2">
             <p className="text-2xl font-bold tracking-tight">
-              {formatNumber(metrics.councilsDiscovered)}
+              {formatNumber(metrics.trustsDiscovered ?? metrics.councilsDiscovered ?? metrics.govDeptsDiscovered)}
             </p>
-            <p className="text-xs text-muted-foreground">Councils Discovered</p>
+            <p className="text-xs text-muted-foreground">Buyers Discovered</p>
           </div>
           <div className="rounded-lg border bg-card p-4 space-y-2">
             <p className="text-2xl font-bold tracking-tight">
@@ -234,39 +240,37 @@ function MetricsDisplay({ metrics }: { metrics: Metrics | null | undefined }) {
       hidden: metrics.suppliersInserted === undefined,
     },
     {
-      label: "Trusts Added",
+      label: "Buyers Added",
       value: formatNumber(
         (metrics.trustsInserted ?? 0) +
-          (metrics.trustsCreatedWithoutMetadata ?? 0)
+          (metrics.trustsCreatedWithoutMetadata ?? 0) +
+          (metrics.buyersInserted ?? 0) +
+          (metrics.buyersCreatedWithoutMetadata ?? 0) +
+          (metrics.councilsInserted ?? 0) +
+          (metrics.govDeptsInserted ?? 0)
       ),
       icon: Building2,
       color: "text-violet-600",
       bgColor: "bg-violet-500/10",
-      hidden: !metrics.trustsInserted && !metrics.trustsCreatedWithoutMetadata,
+      hidden: 
+        !metrics.trustsInserted && 
+        !metrics.trustsCreatedWithoutMetadata && 
+        !metrics.buyersInserted && 
+        !metrics.buyersCreatedWithoutMetadata && 
+        !metrics.councilsInserted && 
+        !metrics.govDeptsInserted,
     },
     {
-      label: "Trusts Updated",
-      value: formatNumber(metrics.trustsUpdated),
+      label: "Buyers Updated",
+      value: formatNumber(
+        (metrics.trustsUpdated ?? 0) + 
+        (metrics.buyersUpdated ?? 0) + 
+        (metrics.councilsUpdated ?? 0)
+      ),
       icon: Building2,
       color: "text-indigo-600",
       bgColor: "bg-indigo-500/10",
-      hidden: !metrics.trustsUpdated,
-    },
-    {
-      label: "Councils Added",
-      value: formatNumber(metrics.councilsInserted),
-      icon: Building2,
-      color: "text-pink-600",
-      bgColor: "bg-pink-500/10",
-      hidden: !metrics.councilsInserted,
-    },
-    {
-      label: "Councils Updated",
-      value: formatNumber(metrics.councilsUpdated),
-      icon: Building2,
-      color: "text-rose-600",
-      bgColor: "bg-rose-500/10",
-      hidden: !metrics.councilsUpdated,
+      hidden: !metrics.trustsUpdated && !metrics.buyersUpdated && !metrics.councilsUpdated,
     },
     {
       label: "Rows Skipped",

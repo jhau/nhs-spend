@@ -23,7 +23,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { getEntities } from "@/lib/data/entities";
 import { EntitySearch } from "./EntitySearch";
-import { EntityDirectoryFilters } from "./EntityDirectoryFilters";
 import { EntityPagination } from "./EntityPagination";
 import { EntityStats } from "./EntityStats";
 import { cn } from "@/lib/utils";
@@ -92,7 +91,6 @@ export default async function EntitiesPage({
               Legal entities from Companies House, NHS ODS, and other registries.
             </CardDescription>
           </div>
-          <EntityDirectoryFilters typeFilter={typeFilter} />
         </CardHeader>
         <CardContent>
           <Table>

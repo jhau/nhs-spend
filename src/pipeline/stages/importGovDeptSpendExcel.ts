@@ -17,7 +17,10 @@ import type {
   PipelineStage,
 } from "../types";
 import { searchGovUkOrganisation } from "@/lib/gov-uk";
-import { findOrCreateGovDepartmentEntity } from "@/lib/matching-helpers";
+import {
+  findOrCreateGovDepartmentEntity,
+  findFuzzyMatch,
+} from "@/lib/matching-helpers";
 
 export type ImportGovDeptSpendExcelInput = {
   assetId: number;
@@ -82,11 +85,24 @@ export const importGovDeptSpendExcelStage: PipelineStage<ImportGovDeptSpendExcel
         expiresSeconds: 60,
       });
 
-      const resp = await fetch(downloadUrl);
+      let resp;
+      try {
+        resp = await fetch(downloadUrl);
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        await ctx.log({
+          level: "error",
+          message: `Fetch failed for asset download: ${error.message}`,
+          meta: { assetId: input.assetId, objectKey, downloadUrl },
+        });
+        throw error;
+      }
+
       if (!resp.ok) {
         await ctx.log({
           level: "error",
-          message: `Failed to download asset (${resp.status})`,
+          message: `Failed to download asset (${resp.status} ${resp.statusText})`,
+          meta: { assetId: input.assetId, objectKey },
         });
         return { status: "failed" };
       }
@@ -106,6 +122,29 @@ export const importGovDeptSpendExcelStage: PipelineStage<ImportGovDeptSpendExcel
           status: "skipped",
           metrics: { sheetsProcessed: 0, paymentsInserted: 0 },
         };
+      }
+
+      // Validate headers for Gov Dept data
+      const GOV_HEADER_LABELS = ["department", "organisation", "authority", "buyer", "council name"];
+      for (const sheetName of dataSheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
+          header: 1,
+          defval: null,
+          range: 0, // Just read header
+        });
+        if (rows.length > 0 && Array.isArray(rows[0])) {
+          const firstCol = cleanString(rows[0][0]).toLowerCase();
+          if (!GOV_HEADER_LABELS.some(label => firstCol.includes(label))) {
+            const reason = `Sheet '${sheetName}' does not appear to be a Government Department spend sheet. Expected 'Department', 'Organisation' or 'Council name' in the first column, but found '${firstCol || "empty"}'. Please ensure you have selected the correct organisation type.`;
+            await ctx.log({
+              level: "error",
+              message: reason,
+              meta: { sheetName, firstCol },
+            });
+            return { status: "failed" };
+          }
+        }
       }
 
       const { discoveredGovDepts, discoveredSuppliers } = await gatherNames(
@@ -257,6 +296,17 @@ async function syncGovDepts(
   for (const [key, name] of discoveredGovDepts) {
     if (idByKey.has(key)) continue;
 
+    // Try fuzzy match against existing buyers first to catch typos
+    const fuzzyMatch = findFuzzyMatch(key, idByKey, 0.9);
+    if (fuzzyMatch) {
+      await ctx.log({
+        level: "info",
+        message: `FUZZY MATCH: Mapping "${name}" to existing buyer "${fuzzyMatch.name}" (confidence: ${fuzzyMatch.rating.toFixed(2)})`,
+      });
+      idByKey.set(key, fuzzyMatch.id);
+      continue;
+    }
+
     await ctx.log({
       level: "info",
       message: `Resolving government department: ${name}`,
@@ -274,10 +324,25 @@ async function syncGovDepts(
           matchStatus: "matched",
           matchConfidence: "1.00",
           matchAttemptedAt: new Date(),
-          officialWebsite: profile.link ? `https://www.gov.uk${profile.link}` : null,
+          officialWebsite: profile.link
+            ? `https://www.gov.uk${profile.link}`
+            : null,
+        })
+        .onConflictDoUpdate({
+          target: [buyers.name],
+          set: {
+            entityId,
+            matchStatus: "matched",
+            matchConfidence: "1.00",
+            matchAttemptedAt: new Date(),
+            officialWebsite: profile.link
+              ? `https://www.gov.uk${profile.link}`
+              : null,
+            updatedAt: new Date(),
+          },
         })
         .returning({ id: buyers.id });
-      
+
       idByKey.set(key, created.id);
       inserted++;
     } else {
@@ -434,13 +499,17 @@ async function importSpendSheets(
 }
 
 function parseAmount(value: unknown) {
-  if (typeof value === "number")
+  if (typeof value === "number") {
+    // numeric(14,2) max is 999,999,999,999.99. Reject astronomical values.
+    if (Math.abs(value) > 100_000_000_000) return { amount: null, raw: value.toString() };
     return { amount: value, raw: value.toString() };
+  }
   const raw = cleanString(value);
   if (!raw) return { amount: null, raw: null };
   const cleaned = raw.replace(/[£,]/g, "");
   const numeric = Number(cleaned);
-  return { amount: isNaN(numeric) ? null : numeric, raw };
+  if (isNaN(numeric) || Math.abs(numeric) > 100_000_000_000) return { amount: null, raw };
+  return { amount: numeric, raw };
 }
 
 function parsePaymentDate(value: unknown) {

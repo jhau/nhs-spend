@@ -92,7 +92,19 @@ async function fetchWithRetry(
   // eslint-disable-next-line no-constant-condition
   while (true) {
     attempt++;
-    const resp = await fetch(url, { ...init, signal: opts.signal });
+    let resp;
+    try {
+      resp = await fetch(url, { ...init, signal: opts.signal });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      if (attempt > opts.maxRetries) {
+        throw new Error(`Fetch failed for URL ${url} after ${attempt} attempts: ${error.message}`);
+      }
+      const backoffMs = opts.backoffBaseMs * Math.pow(2, attempt - 1);
+      await sleep(backoffMs, opts.signal);
+      continue;
+    }
+
     if (resp.ok) return resp;
 
     if (!isRetryableStatus(resp.status) || attempt > opts.maxRetries) {

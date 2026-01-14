@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getSuppliers, getPendingSuppliers } from "@/lib/data/suppliers";
+import { getSuppliers, getPendingSuppliers, type SuppliersListResponse } from "@/lib/data/suppliers";
 import { SupplierSearch } from "./SupplierSearch";
 import { SupplierTabs } from "./SupplierTabs";
 import { SupplierPagination } from "./SupplierPagination";
@@ -42,6 +42,7 @@ export default async function SuppliersPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
+  console.time("SuppliersPage.execution");
   const sParams = await searchParams;
   const activeTab = (sParams.tab as string) || "directory";
   const statusFilter = (sParams.status as string) || "all";
@@ -50,29 +51,37 @@ export default async function SuppliersPage({
   const limit = 20;
   const offset = (page - 1) * limit;
 
-  // Fetch summary data (counts)
-  const summaryData = await getSuppliers({
-    limit: 1,
-    search: searchFilter,
-  });
-
-  // Fetch active tab data
-  let suppliersData: any = { suppliers: [] };
+  // Fetch data based on active tab
+  let suppliersData: SuppliersListResponse;
   let pendingSuppliers: any[] = [];
 
   if (activeTab === "matching") {
-    pendingSuppliers = await getPendingSuppliers({
-      limit: 100,
-      search: searchFilter,
-    });
+    console.time("SuppliersPage.getMatchingData");
+    const [summaryData, pendingData] = await Promise.all([
+      getSuppliers({
+        limit: 1,
+        search: searchFilter,
+      }),
+      getPendingSuppliers({
+        limit: 100,
+        search: searchFilter,
+      }),
+    ]);
+    suppliersData = summaryData;
+    pendingSuppliers = pendingData;
+    console.timeEnd("SuppliersPage.getMatchingData");
   } else {
+    console.time("SuppliersPage.getSuppliersData");
     suppliersData = await getSuppliers({
       limit,
       offset,
       status: activeTab === "matched" ? "matched" : statusFilter,
       search: searchFilter,
     });
+    console.timeEnd("SuppliersPage.getSuppliersData");
   }
+
+  const summaryData = suppliersData;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-GB", {
@@ -88,6 +97,13 @@ export default async function SuppliersPage({
       : summaryData.totalCount) / limit
   );
 
+  const result = (
+    <div className="container mx-auto py-8 space-y-8">
+      {/* ... existing JSX ... */}
+    </div>
+  );
+
+  console.timeEnd("SuppliersPage.execution");
   return (
     <div className="container mx-auto py-8 space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

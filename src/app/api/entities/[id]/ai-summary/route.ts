@@ -10,12 +10,15 @@ export async function GET(
 ) {
   const { id } = await params;
   const entityId = parseInt(id);
+  const { searchParams } = new URL(req.url);
+  const force = searchParams.get("force") === "true";
 
   try {
     const entityRes = await db
       .select({
         id: entities.id,
         name: entities.name,
+        entityType: entities.entityType,
         aiSummary: entities.aiSummary,
         aiNews: entities.aiNews,
         aiSummaryUpdatedAt: entities.aiSummaryUpdatedAt,
@@ -33,7 +36,9 @@ export async function GET(
     const aiResult = await refreshAISummary(
       entity.id,
       entity.name,
-      entity.aiSummaryUpdatedAt
+      entity.entityType,
+      entity.aiSummaryUpdatedAt,
+      force
     );
 
     if (aiResult) {

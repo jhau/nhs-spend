@@ -563,7 +563,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   title: {
     fontSize: "28px",
     fontWeight: 600,
-    color: "#1a1a2e",
+    color: "#2D213F",
     margin: "0 0 12px 0",
   },
   meta: {
@@ -585,7 +585,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: "4px 10px",
     fontSize: "11px",
     fontWeight: 700,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "#2D213F",
     color: "white",
     borderRadius: "4px",
   },
@@ -617,8 +617,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: "all 0.2s",
   },
   activeTab: {
-    color: "#1a1a2e",
-    borderBottomColor: "#1a1a2e",
+    color: "#2D213F",
+    borderBottomColor: "#2D213F",
   },
   supplierTags: {
     display: "flex",
@@ -655,7 +655,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   summaryValue: {
     fontSize: "28px",
     fontWeight: 600,
-    color: "#1a1a2e",
+    color: "#2D213F",
     marginBottom: "4px",
   },
   summaryLabel: {
@@ -677,7 +677,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   cardTitle: {
     fontSize: "16px",
     fontWeight: 600,
-    color: "#1a1a2e",
+    color: "#2D213F",
     margin: 0,
   },
   buyerList: {
@@ -714,7 +714,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   buyerName: {
     fontSize: "14px",
     fontWeight: 500,
-    color: "#1a1a2e",
+    color: "#2D213F",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
@@ -726,7 +726,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   buyerSpend: {
     fontSize: "14px",
     fontWeight: 600,
-    color: "#1a1a2e",
+    color: "#2D213F",
   },
   topTxList: {
     display: "flex",
@@ -778,7 +778,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   topTxAmount: {
     fontSize: "14px",
     fontWeight: 600,
-    color: "#1a1a2e",
+    color: "#2D213F",
   },
   monthlyList: {
     display: "flex",
@@ -812,7 +812,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: "right" as const,
     fontSize: "13px",
     fontWeight: 500,
-    color: "#1a1a2e",
+    color: "#2D213F",
   },
   tableContainer: {
     overflow: "auto",

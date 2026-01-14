@@ -10,6 +10,7 @@ import {
   X,
   Terminal,
   RotateCw,
+  Search,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -90,6 +91,9 @@ export default function PipelinePage() {
   const [page, setPage] = useState(1);
   const limit = 20;
 
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
   const [isDragging, setIsDragging] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [streamStatus, setStreamStatus] = useState<
@@ -119,16 +123,33 @@ export default function PipelinePage() {
     [assetId, orgType, running]
   );
 
-  async function refreshRuns(targetPage = page) {
+  async function refreshRuns(targetPage = page, searchTerm = debouncedSearch) {
     const offset = (targetPage - 1) * limit;
-    const resp = await fetch(`/api/pipeline/runs?limit=${limit}&offset=${offset}`);
+    let url = `/api/pipeline/runs?limit=${limit}&offset=${offset}`;
+    if (searchTerm) {
+      url += `&search=${encodeURIComponent(searchTerm)}`;
+    }
+    const resp = await fetch(url);
     const data = await resp.json();
     setRuns(data.runs ?? []);
     setTotalCount(data.totalCount ?? 0);
   }
 
+  // Debounce search
   useEffect(() => {
-    void refreshRuns();
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+    void refreshRuns(1, debouncedSearch);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    void refreshRuns(page, debouncedSearch);
   }, [page]);
 
   // Auto-scroll logs to bottom
@@ -398,14 +419,28 @@ export default function PipelinePage() {
     }
   }
 
-  async function retryRun(run: { id: number; assetId: number }) {
+  async function retryRun(run: {
+    id: number;
+    assetId: number;
+    orgType: string;
+    fromStageId?: string;
+    toStageId?: string;
+    params?: Record<string, any>;
+  }) {
     setRetryingRunId(run.id);
     setError(null);
     try {
       const resp = await fetch("/api/pipeline/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assetId: run.assetId, dryRun: false }),
+        body: JSON.stringify({
+          assetId: run.assetId,
+          orgType: run.orgType,
+          fromStageId: run.fromStageId,
+          toStageId: run.toStageId,
+          params: run.params,
+          dryRun: false,
+        }),
       });
       const data = (await resp.json()) as CreateRunResponse;
       if (!resp.ok) {
@@ -812,10 +847,22 @@ export default function PipelinePage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Recent Runs</CardTitle>
-          <CardDescription>History of pipeline executions</CardDescription>
-          <CardAction>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div className="space-y-1">
+            <CardTitle>Recent Runs</CardTitle>
+            <CardDescription>History of pipeline executions</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <input
+                type="search"
+                placeholder="Search filename..."
+                className="pl-8 h-9 w-[200px] lg:w-[300px] rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -824,7 +871,7 @@ export default function PipelinePage() {
               <RefreshCw className="size-4" />
               Refresh
             </Button>
-          </CardAction>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -835,6 +882,7 @@ export default function PipelinePage() {
                 <TableHead>Org Type</TableHead>
                 <TableHead>Filename</TableHead>
                 <TableHead>Asset</TableHead>
+                <TableHead>Buyers</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="w-[100px]">Actions</TableHead>
@@ -893,6 +941,33 @@ export default function PipelinePage() {
                       )}
                     </TableCell>
                     <TableCell>
+                      {(() => {
+                        const m = r.metrics;
+                        if (!m) return <span className="text-muted-foreground">—</span>;
+                        const buyersCount = 
+                          (m.trustsInserted ?? 0) + 
+                          (m.trustsUpdated ?? 0) + 
+                          (m.trustsCreatedWithoutMetadata ?? 0) +
+                          (m.buyersInserted ?? 0) +
+                          (m.buyersUpdated ?? 0) +
+                          (m.buyersCreatedWithoutMetadata ?? 0) +
+                          (m.councilsInserted ?? 0) +
+                          (m.councilsUpdated ?? 0) +
+                          (m.govDeptsInserted ?? 0) +
+                          (m.trustsDiscovered ?? 0) +
+                          (m.councilsDiscovered ?? 0) +
+                          (m.govDeptsDiscovered ?? 0);
+                        
+                        if (buyersCount === 0 && !m.dryRun) return <span className="text-muted-foreground">—</span>;
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <span className="font-medium">{buyersCount} buyers</span>
+                            {m.dryRun && <span className="text-[10px] text-amber-600 font-medium uppercase">Dry Run</span>}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell>
                       <StatusBadge status={r.status} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -923,7 +998,7 @@ export default function PipelinePage() {
               {runs.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={9}
                     className="h-24 text-center text-muted-foreground"
                   >
                     No runs yet.

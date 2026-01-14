@@ -1,7 +1,43 @@
-import { entities, companies, councils, governmentDepartments, nhsOrganisations } from "@/db/schema";
+import {
+  entities,
+  companies,
+  councils,
+  governmentDepartments,
+  nhsOrganisations,
+} from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import stringSimilarity from "string-similarity";
 import type { GovUkOrganisation } from "./gov-uk";
 import type { OdsOrganisation } from "./nhs-api";
+
+/**
+ * Finds the best match for a name from a map of existing names to IDs.
+ * Returns the matched ID if the similarity is above the threshold.
+ */
+export function findFuzzyMatch(
+  name: string,
+  existingMap: Map<string, number>,
+  threshold = 0.85
+): { id: number; name: string; rating: number } | null {
+  if (existingMap.size === 0) return null;
+
+  const nameUpper = name.toUpperCase();
+  const existingNames = Array.from(existingMap.keys());
+  const matches = stringSimilarity.findBestMatch(nameUpper, existingNames);
+
+  if (matches.bestMatch.rating >= threshold) {
+    const id = existingMap.get(matches.bestMatch.target);
+    if (id !== undefined) {
+      return {
+        id,
+        name: matches.bestMatch.target,
+        rating: matches.bestMatch.rating,
+      };
+    }
+  }
+
+  return null;
+}
 
 /**
  * Helper to find or create an entity and NHS organisation record for an NHS Trust.

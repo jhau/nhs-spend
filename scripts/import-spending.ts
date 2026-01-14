@@ -122,6 +122,25 @@ async function main() {
         metadataMap
       );
 
+      // Validate headers for NHS data
+      for (const sheetName of dataSheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = utils.sheet_to_json<(string | number | null)[]>(sheet, {
+          header: 1,
+          defval: null,
+          range: 0, // Just read header
+        });
+        if (rows.length > 0 && Array.isArray(rows[0])) {
+          const firstCol = cleanString(rows[0][0]);
+          if (!isHeaderTrustLabel(firstCol)) {
+            console.error(`✖ Error: Sheet '${sheetName}' does not appear to be an NHS spend sheet.`);
+            console.error(`  Expected 'Trust name' or 'Org code desc/trust' in the first column, but found '${firstCol || "empty"}'.`);
+            console.error(`  Please ensure you are importing the correct file type.`);
+            process.exit(1);
+          }
+        }
+      }
+
       if (options.dryRun) {
         console.info(`  • Would process ${dataSheetNames.length} sheet(s)`);
         console.info(`  • Metadata for ${metadataMap.size} trust(s)`);
@@ -664,7 +683,13 @@ function parseAmount(value: unknown): {
     return { amount: null, raw };
   }
 
-  return { amount: negative ? -numeric : numeric, raw };
+  const amount = negative ? -numeric : numeric;
+  // numeric(14,2) max is 999,999,999,999.99. Reject astronomical values.
+  if (Math.abs(amount) > 100_000_000_000) {
+    return { amount: null, raw };
+  }
+
+  return { amount, raw };
 }
 
 function parsePaymentDate(value: unknown): {

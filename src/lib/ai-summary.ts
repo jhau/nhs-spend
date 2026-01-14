@@ -16,12 +16,14 @@ export interface AISummaryResult {
 export async function refreshAISummary(
   entityId: number,
   entityName: string,
-  currentUpdatedAt: Date | null
+  entityType: string,
+  currentUpdatedAt: Date | null,
+  forceRefresh: boolean = false
 ): Promise<AISummaryResult | null> {
   const now = new Date();
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  if (currentUpdatedAt && currentUpdatedAt > twentyFourHoursAgo) {
+  if (!forceRefresh && currentUpdatedAt && currentUpdatedAt > twentyFourHoursAgo) {
     return null; // No refresh needed
   }
 
@@ -31,8 +33,10 @@ export async function refreshAISummary(
   }
 
   try {
-    const prompt = `Provide a summary of the company "${entityName}" in less than 200 words. 
-Also find the latest 5 news articles about this company with their links and publication dates.
+    const orgTypeDesc = entityType.replace(/_/g, " ");
+    const prompt = `Provide a summary of the ${orgTypeDesc} "${entityName}" in less than 200 words. 
+Also find the latest 5 news articles about this specific ${orgTypeDesc} with their links and publication dates.
+Ensure the news is about the UK ${orgTypeDesc} and not some other company with a similar name.
 Return the response in strict JSON format:
 {
   "summary": "the summary text...",

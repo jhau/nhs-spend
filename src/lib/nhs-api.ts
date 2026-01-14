@@ -44,6 +44,7 @@ export async function searchNhsOrganisation(
     try {
       const response = await fetch(url);
       if (!response.ok) {
+        console.warn(`NHS ODS API error: ${response.status} ${response.statusText} for URL: ${url}`);
         continue;
       }
 
@@ -58,7 +59,7 @@ export async function searchNhsOrganisation(
         }
       }
     } catch (error) {
-      console.error(`Error searching NHS ODS for "${term}":`, error);
+      console.error(`Error searching NHS ODS for "${term}" at URL ${url}:`, error instanceof Error ? error.message : String(error));
       continue;
     }
   }

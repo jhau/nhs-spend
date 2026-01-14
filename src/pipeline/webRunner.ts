@@ -51,7 +51,7 @@ async function runOne(runId: number) {
   await logger.log({
     level: "info",
     message: `Pipeline run started`,
-    meta: { runId, assetId: run.assetId, dryRun: run.dryRun },
+    meta: { runId, assetId: run.assetId, dryRun: run.dryRun, orgType: run.orgType },
   });
 
   await setPipelineRunStatus(runId, {

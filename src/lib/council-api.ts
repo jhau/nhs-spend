@@ -153,7 +153,7 @@ function lookupLocalGeography(name: string) {
 
   const bestMatch = matches[0];
 
-  if (bestMatch.similarity > 0.7) {
+  if (bestMatch.similarity > 0.8) {
     return {
       officialName: bestMatch.officialName,
       gssCode: bestMatch.gssCode,
@@ -204,13 +204,13 @@ async function queryOpenGeography(
     const resp = await fetch(url);
     if (!resp.ok) {
       console.warn(
-        `Open Geography API error: ${resp.status} ${resp.statusText}`
+        `Open Geography API error: ${resp.status} ${resp.statusText} for URL: ${url}`
       );
       return null;
     }
     return await resp.json();
   } catch (error) {
-    console.warn("Open Geography API request failed:", error);
+    console.warn(`Open Geography API request failed for URL: ${endpoint}. Error: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
@@ -549,7 +549,10 @@ async function lookupGovUkMetadata(name: string) {
 
   try {
     const searchResp = await fetch(searchUrl);
-    if (!searchResp.ok) return null;
+    if (!searchResp.ok) {
+      console.warn(`Gov.uk search failed: ${searchResp.status} ${searchResp.statusText} for URL: ${searchUrl}`);
+      return null;
+    }
 
     const searchData = await searchResp.json();
     let bestMatch = null;
@@ -581,7 +584,10 @@ async function lookupGovUkMetadata(name: string) {
         name
       )}&filter_format=organisation&fields=title,link,organisation_type`;
       const broadResp = await fetch(broaderUrl);
-      if (!broadResp.ok) return null;
+      if (!broadResp.ok) {
+        console.warn(`Gov.uk broad search failed: ${broadResp.status} ${broadResp.statusText} for URL: ${broaderUrl}`);
+        return null;
+      }
       const broadData = await broadResp.json();
       if (!broadData.results || broadData.results.length === 0) return null;
 
@@ -613,7 +619,10 @@ async function lookupGovUkMetadata(name: string) {
     const orgUrl = `https://www.gov.uk/api/organisations/${orgSlug}`;
 
     const orgResp = await fetch(orgUrl);
-    if (!orgResp.ok) return null;
+    if (!orgResp.ok) {
+      console.warn(`Gov.uk org lookup failed: ${orgResp.status} ${orgResp.statusText} for URL: ${orgUrl}`);
+      return null;
+    }
 
     const orgData = await orgResp.json();
 
@@ -624,7 +633,7 @@ async function lookupGovUkMetadata(name: string) {
       tier: inferTierFromType(orgData.details?.organisation_type || ""),
     };
   } catch (e) {
-    console.warn("Gov.uk API lookup failed:", e);
+    console.warn(`Gov.uk API lookup failed for organisation "${name}". Error: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   return null;
@@ -645,6 +654,13 @@ export async function searchCouncilMetadata(
 
   // Heuristic: If it looks like a company or doesn't look like a council, skip it
   const lowerName = normalizedName.toLowerCase();
+
+  // Check if it's explicitly a county council (Tier 1)
+  const isLikelyCounty =
+    lowerName.includes("county council") &&
+    !lowerName.includes("district") &&
+    !lowerName.includes("borough");
+
   const hasCouncilKeyword =
     lowerName.includes("council") ||
     lowerName.includes("authority") ||
@@ -667,7 +683,33 @@ export async function searchCouncilMetadata(
       query: normalizedName,
     });
 
-    // 1. Try to find GSS code and official name from local CSV (LADs only)
+    // 1. If it's likely a county, try Open Geography first to avoid incorrect LAD matches
+    if (isLikelyCounty) {
+      console.info(
+        "[searchCouncilMetadata] Likely county, checking Open Geography API first",
+        { query: normalizedName }
+      );
+      const apiResult = await searchOpenGeographyPortal(normalizedName);
+      if (apiResult && apiResult.councilType === "county") {
+        console.info(
+          "[searchCouncilMetadata] Matched County via Open Geography API",
+          {
+            query: normalizedName,
+            match: apiResult.officialName,
+            gssCode: apiResult.gssCode,
+          }
+        );
+
+        // Try to get homepage URL from Gov.uk
+        const govUkDetails = await lookupGovUkMetadata(apiResult.officialName);
+        if (govUkDetails?.homepageUrl) {
+          apiResult.homepageUrl = govUkDetails.homepageUrl;
+        }
+        return apiResult;
+      }
+    }
+
+    // 2. Try to find GSS code and official name from local CSV (LADs only)
     const localResult = lookupLocalGeography(normalizedName);
 
     if (localResult) {
