@@ -99,7 +99,8 @@ export default async function EntitiesPage({
                 <TableHead>Entity Name</TableHead>
                 <TableHead className="text-right">Linked Suppliers</TableHead>
                 <TableHead className="text-right">Linked Buyers</TableHead>
-                <TableHead className="text-right">Total Spend</TableHead>
+                <TableHead className="text-right">Buyer Spend</TableHead>
+                <TableHead className="text-right">Supplier Receipts</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead className="w-[100px]"></TableHead>
               </TableRow>
@@ -107,7 +108,7 @@ export default async function EntitiesPage({
             <TableBody>
               {entitiesData.entities.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     No entities found.
                   </TableCell>
                 </TableRow>
@@ -140,7 +141,10 @@ export default async function EntitiesPage({
                       {e.buyerCount}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrency(e.totalSpend)}
+                      {formatCurrency(e.buyerTotalSpend)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(e.supplierTotalReceived)}
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">

@@ -65,7 +65,14 @@ export default async function NHSBuyersPage({
   const startDate = (sParams.startDate as string) || defaultDates.startDate;
   const endDate = (sParams.endDate as string) || defaultDates.endDate;
 
-  const { buyers, parentOrganisations, typeStats, summary, pagination } = await getBuyersData({
+  const {
+    buyers,
+    parentOrganisations,
+    typeStats,
+    summary,
+    pagination,
+    verificationStats,
+  } = await getBuyersData({
     page: currentPage,
     limit: 20,
     orgType: "nhs",
@@ -88,43 +95,27 @@ export default async function NHSBuyersPage({
 
       {/* Tab Content */}
       {activeTab === "regional" ? (
-        <RegionalActivity 
-          startDate={startDate} 
-          endDate={endDate} 
+        <RegionalActivity
+          startDate={startDate}
+          endDate={endDate}
           initialRegion={regionParam}
           orgType="nhs"
         />
       ) : (
         <>
           {/* Parent Organisations - National/Regional Bodies */}
-          {parentOrganisations.length > 0 && (
-            <div style={styles.parentOrgsSection}>
-              <h2 style={styles.sectionTitle}>National NHS Bodies</h2>
-              <div style={styles.parentOrgsGrid}>
-                {parentOrganisations.map((org: any) => (
-                  <div key={org.id} style={styles.parentOrgCard}>
-                    <div style={styles.parentOrgName}>{org.name}</div>
-                    <div style={styles.parentOrgSpend}>
-                      {formatCurrency(parseFloat(org.total_spend))}
-                    </div>
-                    <div style={styles.parentOrgMeta}>
-                      {formatNumber(org.supplier_count)} suppliers
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Summary Cards */}
           <div style={styles.summarySection}>
-            <h2 style={styles.sectionTitle}>NHS Sub-Organisations Overview</h2>
+            <h2 style={styles.sectionTitle}>NHS Organisations Overview</h2>
             <div style={styles.summaryGrid}>
               {typeStats.map((stat: any) => (
                 <SummaryCard
                   key={stat.type}
                   value={formatCurrency(parseFloat(stat.total_spend))}
-                  label={`${stat.type} (${formatNumber(stat.buyer_count)} buyers)`}
+                  label={`${stat.type} (${formatNumber(
+                    stat.buyer_count
+                  )} buyers)`}
                 />
               ))}
             </div>
@@ -133,8 +124,12 @@ export default async function NHSBuyersPage({
           {/* Search */}
           <BuyerSearch />
 
-          <Suspense fallback={<div className="h-10 mb-4 animate-pulse bg-zinc-100 rounded-lg w-64" />}>
-            <BuyerVerifiedFilter />
+          <Suspense
+            fallback={
+              <div className="h-10 mb-4 animate-pulse bg-zinc-100 rounded-lg w-64" />
+            }
+          >
+            <BuyerVerifiedFilter stats={verificationStats} />
           </Suspense>
 
           {/* Data Table */}
@@ -147,9 +142,13 @@ export default async function NHSBuyersPage({
                   <th style={styles.th}>ODS Code</th>
                   <th style={styles.th}>Linked Entity</th>
                   <th style={styles.th}>Type</th>
-                  <th style={{ ...styles.th, textAlign: "right" }}>Total Spend</th>
+                  <th style={{ ...styles.th, textAlign: "right" }}>
+                    Total Spend
+                  </th>
                   <th style={styles.th}>Top Supplier</th>
-                  <th style={{ ...styles.th, textAlign: "center" }}># of Suppliers</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>
+                    # of Suppliers
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -163,22 +162,29 @@ export default async function NHSBuyersPage({
                   buyers.map((buyer: Buyer) => (
                     <tr key={buyer.id} style={styles.tr}>
                       <td style={styles.td}>
-                        <Link href={`/buyers/${buyer.id}`} style={styles.buyerName}>
+                        <Link
+                          href={`/buyers/${buyer.id}`}
+                          style={styles.buyerName}
+                        >
                           {buyer.buyer_name}
                         </Link>
                       </td>
                       <td style={styles.td}>
-                        <Badge 
+                        <Badge
                           variant={
-                            buyer.match_status === "matched" ? "default" :
-                            buyer.match_status === "pending_review" ? "secondary" :
-                            "outline"
+                            buyer.match_status === "matched"
+                              ? "default"
+                              : buyer.match_status === "pending_review"
+                              ? "secondary"
+                              : "outline"
                           }
                           className={cn(
                             "text-[10px] px-1.5 py-0 h-4 uppercase font-semibold",
-                            buyer.match_status === "matched" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none" :
-                            buyer.match_status === "pending_review" ? "bg-amber-100 text-amber-700 hover:bg-amber-100 border-none" :
-                            "text-zinc-500"
+                            buyer.match_status === "matched"
+                              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none"
+                              : buyer.match_status === "pending_review"
+                              ? "bg-amber-100 text-amber-700 hover:bg-amber-100 border-none"
+                              : "text-zinc-500"
                           )}
                         >
                           {buyer.match_status.replace("_", " ")}
@@ -191,14 +197,14 @@ export default async function NHSBuyersPage({
                       </td>
                       <td style={styles.td}>
                         {buyer.entity_id ? (
-                          <Link 
+                          <Link
                             href={`/entities/${buyer.entity_id}`}
                             style={styles.entityLink}
                           >
                             {buyer.entity_name}
                           </Link>
                         ) : (
-                          <EntityLinker 
+                          <EntityLinker
                             entityName={buyer.buyer_name}
                             entityId={buyer.id}
                             entityKind="buyer"
@@ -210,11 +216,15 @@ export default async function NHSBuyersPage({
                         )}
                       </td>
                       <td style={styles.td}>
-                        <span style={styles.typeTag}>
-                          {buyer.display_type}
-                        </span>
+                        <span style={styles.typeTag}>{buyer.display_type}</span>
                       </td>
-                      <td style={{ ...styles.td, textAlign: "right", fontWeight: 600 }}>
+                      <td
+                        style={{
+                          ...styles.td,
+                          textAlign: "right",
+                          fontWeight: 600,
+                        }}
+                      >
                         {formatCurrency(parseFloat(buyer.total_spend))}
                       </td>
                       <td style={styles.td}>
@@ -233,7 +243,10 @@ export default async function NHSBuyersPage({
           </div>
 
           {/* Pagination */}
-          <BuyerPagination currentPage={currentPage} totalPages={pagination.totalPages} />
+          <BuyerPagination
+            currentPage={currentPage}
+            totalPages={pagination.totalPages}
+          />
         </>
       )}
     </div>
@@ -256,9 +269,7 @@ function SummaryCard({
         ...(highlight ? styles.summaryCardHighlight : {}),
       }}
     >
-      <div style={styles.summaryValue}>
-        {value}
-      </div>
+      <div style={styles.summaryValue}>{value}</div>
       <div style={styles.summaryLabel}>{label}</div>
       <button style={styles.viewLink}>View</button>
     </div>
@@ -270,7 +281,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     minHeight: "100vh",
     backgroundColor: "#fafafa",
     padding: "32px 48px",
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontFamily:
+      "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   },
   header: {
     marginBottom: "24px",

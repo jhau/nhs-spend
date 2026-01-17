@@ -521,7 +521,7 @@ export async function GET(
       hitCount: 0,
       error: "Failed to fetch contracts",
       searchMethod: "keyword",
-      searchKeyword: supplierName,
+      searchKeyword: "unknown",
     });
   }
 }

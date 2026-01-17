@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   LineChart,
@@ -65,6 +66,13 @@ const SidebarSection = ({ title }: { title: string }) => (
 );
 
 export const Sidebar = () => {
+  const pathname = usePathname();
+
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
+  };
+
   return (
     <div className="flex h-screen w-64 flex-col bg-[#2D213F] text-white">
       {/* Logo */}
@@ -97,25 +105,33 @@ export const Sidebar = () => {
             icon={LayoutDashboard}
             label="Dashboard"
             href="/dashboard"
+            active={isActive("/dashboard")}
           />
           <SidebarItem
             icon={LineChart}
             label="AI Market Intelligence"
             href="/assistant"
+            active={isActive("/assistant")}
           />
 
           <SidebarSection title="Spend Data" />
-          <SidebarItem icon={Users} label="Buyers" href="/buyers" active />
+          <SidebarItem
+            icon={Users}
+            label="Buyers"
+            href="/buyers"
+            active={isActive("/buyers")}
+          />
           <SidebarItem
             icon={Users}
             label="Suppliers"
             href="/suppliers"
-            active
+            active={isActive("/suppliers")}
           />
           <SidebarItem
             icon={Building2}
             label="Verified Entities"
             href="/entities"
+            active={isActive("/entities")}
           />
 
           {/* <SidebarSection title="Discover" />
@@ -124,16 +140,19 @@ export const Sidebar = () => {
             label="Opportunities"
             href="/opportunities"
             badge="Enterprise"
+            active={isActive("/opportunities")}
           />
           <SidebarItem
             icon={FileText}
             label="Contracts & Renewals"
             href="/contracts"
+            active={isActive("/contracts")}
           />
           <SidebarItem
             icon={ClipboardList}
             label="Frameworks & Eligibility"
             href="/frameworks"
+            active={isActive("/frameworks")}
           /> */}
 
           {/* <SidebarSection title="Organise" />
@@ -141,30 +160,56 @@ export const Sidebar = () => {
             icon={Bookmark}
             label="Saved Lists"
             href="/saved-lists"
+            active={isActive("/saved-lists")}
           />
-          <SidebarItem icon={BarChart3} label="Reports" href="/reports" />
-          <SidebarItem icon={Users2} label="Team Directory" href="/team" /> */}
+          <SidebarItem
+            icon={BarChart3}
+            label="Reports"
+            href="/reports"
+            active={isActive("/reports")}
+          />
+          <SidebarItem
+            icon={Users2}
+            label="Team Directory"
+            href="/team"
+            active={isActive("/team")}
+          /> */}
           <SidebarSection title="Admin" />
-          <SidebarItem icon={RefreshCw} label="Import" href="/pipeline" />
+          <SidebarItem
+            icon={RefreshCw}
+            label="Import"
+            href="/pipeline"
+            active={isActive("/pipeline")}
+          />
           <SidebarItem
             icon={Gauge}
             label="Data Dashboard"
             href="/admin/dashboard"
+            active={isActive("/admin/dashboard")}
+          />
+          <SidebarItem
+            icon={BarChart3}
+            label="Usage Analytics"
+            href="/admin/usage"
+            active={isActive("/admin/usage")}
           />
           {/* <SidebarItem
             icon={Users2}
             label="User Management"
             href="/user-management"
+            active={isActive("/user-management")}
           />
           <SidebarItem
             icon={Building}
             label="Organisational Profile"
             href="/profile"
+            active={isActive("/profile")}
           />
           <SidebarItem
             icon={CreditCard}
             label="Billing & Subscription"
             href="/billing"
+            active={isActive("/billing")}
           /> */}
         </div>
       </div>

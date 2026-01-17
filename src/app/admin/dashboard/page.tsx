@@ -22,6 +22,7 @@ import {
   Hospital,
   Briefcase,
   PoundSterling,
+  HelpCircle,
 } from "lucide-react";
 
 async function getDashboardData() {
@@ -72,7 +73,8 @@ async function getDashboardData() {
         COUNT(CASE WHEN entity_type = 'company' THEN 1 END)::int as companies,
         COUNT(CASE WHEN entity_type IN ('nhs_trust', 'nhs_icb', 'nhs_practice') THEN 1 END)::int as nhs_orgs,
         COUNT(CASE WHEN entity_type = 'council' THEN 1 END)::int as councils,
-        COUNT(CASE WHEN entity_type = 'government_department' THEN 1 END)::int as gov_depts
+        COUNT(CASE WHEN entity_type = 'government_department' THEN 1 END)::int as gov_depts,
+        COUNT(CASE WHEN postal_code IS NOT NULL OR (latitude IS NOT NULL AND longitude IS NOT NULL) THEN 1 END)::int as with_location
       FROM entities
     `),
     db.execute(sql`
@@ -156,6 +158,7 @@ async function getDashboardData() {
       nhs_orgs: number;
       councils: number;
       gov_depts: number;
+      with_location: number;
     },
     pipeline: pipelineStats.rows[0] as {
       total_assets: number;
@@ -215,7 +218,7 @@ export default async function AdminDashboardPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">Admin Dashboard</h1>
+          <h1 className="text-3xl font-bold text-slate-900">Data Dashboard</h1>
           <p className="text-slate-500 mt-1">
             UK Public Sector Spending Dataset Overview
           </p>
@@ -234,7 +237,9 @@ export default async function AdminDashboardPage() {
               <div className="text-3xl font-bold text-slate-900">
                 {formatNumber(data.spend.total_entries)}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Total transactions</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Total transactions
+              </p>
             </CardContent>
           </Card>
 
@@ -267,7 +272,8 @@ export default async function AdminDashboardPage() {
                 {data.spend.min_date ? formatDate(data.spend.min_date) : "N/A"}
               </div>
               <div className="text-lg font-bold text-slate-900">
-                → {data.spend.max_date ? formatDate(data.spend.max_date) : "N/A"}
+                →{" "}
+                {data.spend.max_date ? formatDate(data.spend.max_date) : "N/A"}
               </div>
             </CardContent>
           </Card>
@@ -280,8 +286,12 @@ export default async function AdminDashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-slate-900">{buyerVerificationRate}%</div>
-              <p className="text-xs text-muted-foreground mt-1">Buyers verified</p>
+              <div className="text-3xl font-bold text-slate-900">
+                {buyerVerificationRate}%
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Buyers verified
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -320,7 +330,15 @@ export default async function AdminDashboardPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Clock className="size-4 text-amber-500" />
-                    <span className="text-sm">Pending Review</span>
+                    <span className="text-sm flex items-center gap-1">
+                      Possible match (needs review)
+                      <span
+                        className="inline-flex"
+                        title="A likely match was suggested, but it needs a person to confirm."
+                      >
+                        <HelpCircle className="size-3 text-slate-400" />
+                      </span>
+                    </span>
                   </div>
                   <Badge
                     variant="secondary"
@@ -332,7 +350,15 @@ export default async function AdminDashboardPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="size-4 text-slate-400" />
-                    <span className="text-sm">Pending</span>
+                    <span className="text-sm flex items-center gap-1">
+                      Not matched yet
+                      <span
+                        className="inline-flex"
+                        title="No confirmed match yet (and no suggested match ready for review)."
+                      >
+                        <HelpCircle className="size-3 text-slate-400" />
+                      </span>
+                    </span>
                   </div>
                   <Badge variant="outline">{data.buyers.pending}</Badge>
                 </div>
@@ -394,7 +420,15 @@ export default async function AdminDashboardPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Clock className="size-4 text-amber-500" />
-                    <span className="text-sm">Pending Review</span>
+                    <span className="text-sm flex items-center gap-1">
+                      Possible match (needs review)
+                      <span
+                        className="inline-flex"
+                        title="A likely match was suggested, but it needs a person to confirm."
+                      >
+                        <HelpCircle className="size-3 text-slate-400" />
+                      </span>
+                    </span>
                   </div>
                   <Badge
                     variant="secondary"
@@ -406,7 +440,15 @@ export default async function AdminDashboardPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="size-4 text-slate-400" />
-                    <span className="text-sm">Pending</span>
+                    <span className="text-sm flex items-center gap-1">
+                      Not matched yet
+                      <span
+                        className="inline-flex"
+                        title="No confirmed match yet (and no suggested match ready for review)."
+                      >
+                        <HelpCircle className="size-3 text-slate-400" />
+                      </span>
+                    </span>
                   </div>
                   <Badge variant="outline">
                     {formatNumber(data.suppliers.pending)}
@@ -457,6 +499,23 @@ export default async function AdminDashboardPage() {
             <CardContent>
               <div className="text-4xl font-bold mb-4">
                 {formatNumber(data.entities.total)}
+              </div>
+
+              <div className="mb-6 flex items-center gap-2">
+                <Badge
+                  variant="secondary"
+                  className="bg-blue-50 text-blue-700 border-blue-100"
+                >
+                  {formatNumber(data.entities.with_location)} with location data
+                </Badge>
+                <span className="text-xs text-slate-500">
+                  (
+                  {(
+                    (data.entities.with_location / data.entities.total) *
+                    100
+                  ).toFixed(1)}
+                  %)
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -561,7 +620,8 @@ export default async function AdminDashboardPage() {
                 Data Quality: Invalid Dates Found
               </CardTitle>
               <CardDescription>
-                These imports contain payment dates outside the expected range (2000-2030)
+                These imports contain payment dates outside the expected range
+                (2000-2030)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -569,20 +629,34 @@ export default async function AdminDashboardPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-amber-200">
-                      <th className="text-left py-2 px-3 font-medium text-amber-800">Import File</th>
-                      <th className="text-right py-2 px-3 font-medium text-amber-800">Bad Dates</th>
-                      <th className="text-left py-2 px-3 font-medium text-amber-800">Earliest</th>
-                      <th className="text-left py-2 px-3 font-medium text-amber-800">Latest</th>
+                      <th className="text-left py-2 px-3 font-medium text-amber-800">
+                        Import File
+                      </th>
+                      <th className="text-right py-2 px-3 font-medium text-amber-800">
+                        Bad Dates
+                      </th>
+                      <th className="text-left py-2 px-3 font-medium text-amber-800">
+                        Earliest
+                      </th>
+                      <th className="text-left py-2 px-3 font-medium text-amber-800">
+                        Latest
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.badDateStats.map((item) => (
-                      <tr key={item.asset_id} className="border-b border-amber-100">
+                      <tr
+                        key={item.asset_id}
+                        className="border-b border-amber-100"
+                      >
                         <td className="py-2 px-3 font-medium truncate max-w-[300px]">
                           {item.original_name}
                         </td>
                         <td className="py-2 px-3 text-right">
-                          <Badge variant="secondary" className="bg-amber-200 text-amber-800">
+                          <Badge
+                            variant="secondary"
+                            className="bg-amber-200 text-amber-800"
+                          >
                             {formatNumber(item.bad_date_count)}
                           </Badge>
                         </td>
@@ -663,4 +737,3 @@ export default async function AdminDashboardPage() {
     </div>
   );
 }
-

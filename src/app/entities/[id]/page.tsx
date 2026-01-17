@@ -58,8 +58,11 @@ export default async function EntityPage({
   const entityId = parseInt(id);
   const defaultDates = getDefaultDateRange();
 
-  const startDate = (sParams.startDate as string) || defaultDates.startDate;
-  const endDate = (sParams.endDate as string) || defaultDates.endDate;
+  const allTime = (sParams.allTime as string) === "1";
+  const startDate = allTime
+    ? ""
+    : (sParams.startDate as string) || defaultDates.startDate;
+  const endDate = allTime ? "" : (sParams.endDate as string) || defaultDates.endDate;
   const page = parseInt((sParams.page as string) || "1");
   const requestedView = sParams.view as "supplier" | "buyer" | undefined;
 
@@ -174,7 +177,11 @@ export default async function EntityPage({
       {showTabs && (
         <div style={styles.tabs}>
           <Link
-            href={`/entities/${entityId}?view=supplier&startDate=${startDate}&endDate=${endDate}`}
+            href={
+              allTime
+                ? `/entities/${entityId}?view=supplier&allTime=1`
+                : `/entities/${entityId}?view=supplier&startDate=${startDate}&endDate=${endDate}`
+            }
             style={{
               ...styles.tab,
               ...(view === "supplier" ? styles.activeTab : {}),
@@ -183,7 +190,11 @@ export default async function EntityPage({
             As Supplier
           </Link>
           <Link
-            href={`/entities/${entityId}?view=buyer&startDate=${startDate}&endDate=${endDate}`}
+            href={
+              allTime
+                ? `/entities/${entityId}?view=buyer&allTime=1`
+                : `/entities/${entityId}?view=buyer&startDate=${startDate}&endDate=${endDate}`
+            }
             style={{
               ...styles.tab,
               ...(view === "buyer" ? styles.activeTab : {}),

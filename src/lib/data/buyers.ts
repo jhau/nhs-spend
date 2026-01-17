@@ -56,11 +56,17 @@ export async function getBuyersData(params: GetBuyersParams) {
       : "";
 
   // Execute all independent queries in parallel for better performance
-  const [summaryRes, buyersRes, countRes, typeStatsRes, parentOrgsRes] =
-    await Promise.all([
-      // 1. Summary statistics
-      db.execute(
-        sql.raw(`
+  const [
+    summaryRes,
+    buyersRes,
+    countRes,
+    typeStatsRes,
+    parentOrgsRes,
+    verificationStatsRes,
+  ] = await Promise.all([
+    // 1. Summary statistics
+    db.execute(
+      sql.raw(`
       SELECT 
         (SELECT COUNT(DISTINCT se.buyer_id) 
          FROM spend_entries se 
@@ -87,13 +93,13 @@ export async function getBuyersData(params: GetBuyersParams) {
          LEFT JOIN government_departments gd ON e.id = gd.entity_id
          WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER}) ${dateFilter} ${typeFilter} ${verificationFilter}) as total_spend
     `)
-      ),
+    ),
 
-      // 2. Main buyer data with optimized top supplier fetch using LATERAL JOIN
-      // ... (rest of the query)
-      db.execute(
-        search
-          ? sql`
+    // 2. Main buyer data with optimized top supplier fetch using LATERAL JOIN
+    // ... (rest of the query)
+    db.execute(
+      search
+        ? sql`
           WITH filtered_buyers AS (
             SELECT 
               b.id,
@@ -124,8 +130,8 @@ export async function getBuyersData(params: GetBuyersParams) {
               dateFilter
             )}
             WHERE (b.name ILIKE ${"%" + search + "%"} OR e.name ILIKE ${
-              "%" + search + "%"
-            })
+            "%" + search + "%"
+          })
               AND (e.name IS NULL OR e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority'))
               ${sql.raw(typeFilter)}
               ${sql.raw(verificationFilter)}
@@ -145,7 +151,7 @@ export async function getBuyersData(params: GetBuyersParams) {
             LIMIT 1
           ) ts ON true
         `
-          : sql.raw(`
+        : sql.raw(`
           WITH filtered_buyers AS (
             SELECT 
               b.id,
@@ -192,12 +198,12 @@ export async function getBuyersData(params: GetBuyersParams) {
             LIMIT 1
           ) ts ON true
         `)
-      ),
+    ),
 
-      // 4. Total count for pagination
-      db.execute(
-        search
-          ? sql`
+    // 4. Total count for pagination
+    db.execute(
+      search
+        ? sql`
             SELECT COUNT(DISTINCT b.id) as count
             FROM buyers b
             LEFT JOIN entities e ON b.entity_id = e.id
@@ -208,13 +214,13 @@ export async function getBuyersData(params: GetBuyersParams) {
               dateFilter
             )}
             WHERE (b.name ILIKE ${"%" + search + "%"} OR e.name ILIKE ${
-              "%" + search + "%"
-            })
+            "%" + search + "%"
+          })
               AND (e.name IS NULL OR e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority'))
               ${sql.raw(typeFilter)}
               ${sql.raw(verificationFilter)}
           `
-          : sql.raw(`
+        : sql.raw(`
             SELECT COUNT(DISTINCT b.id) as count
             FROM buyers b
             LEFT JOIN entities e ON b.entity_id = e.id
@@ -226,11 +232,11 @@ export async function getBuyersData(params: GetBuyersParams) {
             ${typeFilter}
             ${verificationFilter}
           `)
-      ),
+    ),
 
-      // 5. Stats by buyer type
-      db.execute(
-        sql.raw(`
+    // 5. Stats by buyer type
+    db.execute(
+      sql.raw(`
       SELECT 
         CASE 
           WHEN nhs.entity_id IS NOT NULL OR e.entity_type LIKE 'nhs_%' THEN 'NHS Orgs'
@@ -250,11 +256,11 @@ export async function getBuyersData(params: GetBuyersParams) {
       GROUP BY 1
       ORDER BY total_spend DESC
     `)
-      ),
+    ),
 
-      // 6. Parent organisations
-      db.execute(
-        sql.raw(`
+    // 6. Parent organisations
+    db.execute(
+      sql.raw(`
       SELECT 
         b.id,
         b.name,
@@ -267,11 +273,50 @@ export async function getBuyersData(params: GetBuyersParams) {
       GROUP BY b.id, b.name
       ORDER BY total_spend DESC
     `)
-      ),
-    ]);
+    ),
+
+    // 7. Verification stats
+    db.execute(
+      search
+        ? sql`
+            SELECT 
+              COUNT(DISTINCT b.id) as all_count,
+              COUNT(DISTINCT b.id) FILTER (WHERE b.entity_id IS NOT NULL) as verified_count,
+              COUNT(DISTINCT b.id) FILTER (WHERE b.entity_id IS NULL) as unverified_count
+            FROM buyers b
+            LEFT JOIN entities e ON b.entity_id = e.id
+            LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
+            LEFT JOIN councils c ON e.id = c.entity_id
+            LEFT JOIN government_departments gd ON e.id = gd.entity_id
+            INNER JOIN spend_entries se ON b.id = se.buyer_id ${sql.raw(
+              dateFilter
+            )}
+            WHERE (b.name ILIKE ${"%" + search + "%"} OR e.name ILIKE ${
+            "%" + search + "%"
+          })
+              AND (e.name IS NULL OR e.name NOT IN ('Department of Health and Social Care', 'DHSC', 'NHS England', 'NHS Business Services Authority'))
+              ${sql.raw(typeFilter)}
+          `
+        : sql.raw(`
+            SELECT 
+              COUNT(DISTINCT b.id) as all_count,
+              COUNT(DISTINCT b.id) FILTER (WHERE b.entity_id IS NOT NULL) as verified_count,
+              COUNT(DISTINCT b.id) FILTER (WHERE b.entity_id IS NULL) as unverified_count
+            FROM buyers b
+            LEFT JOIN entities e ON b.entity_id = e.id
+            LEFT JOIN nhs_organisations nhs ON e.id = nhs.entity_id
+            LEFT JOIN councils c ON e.id = c.entity_id
+            LEFT JOIN government_departments gd ON e.id = gd.entity_id
+            INNER JOIN spend_entries se ON b.id = se.buyer_id ${dateFilter}
+            WHERE (e.name IS NULL OR e.name NOT IN ${PARENT_ORG_FILTER})
+            ${typeFilter}
+          `)
+    ),
+  ]);
 
   const summaryResult = summaryRes.rows[0] as any;
   const countResult = countRes.rows[0] as any;
+  const verificationStats = verificationStatsRes.rows[0] as any;
 
   return {
     summary: {
@@ -282,6 +327,11 @@ export async function getBuyersData(params: GetBuyersParams) {
     typeStats: typeStatsRes.rows as any[],
     parentOrganisations: parentOrgsRes.rows as any[],
     buyers: buyersRes.rows as any[],
+    verificationStats: {
+      all: Number(verificationStats?.all_count) || 0,
+      verified: Number(verificationStats?.verified_count) || 0,
+      unverified: Number(verificationStats?.unverified_count) || 0,
+    },
     pagination: {
       page,
       limit,

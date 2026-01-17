@@ -54,7 +54,7 @@ export default async function CouncilsBuyersPage({
   const startDate = (sParams.startDate as string) || defaultDates.startDate;
   const endDate = (sParams.endDate as string) || defaultDates.endDate;
 
-  const { buyers, summary, pagination } = await getBuyersData({
+  const { buyers, summary, pagination, verificationStats } = await getBuyersData({
     page: currentPage,
     limit: 20,
     orgType: "council",
@@ -97,8 +97,9 @@ export default async function CouncilsBuyersPage({
       <BuyerSearch />
 
       <Suspense fallback={<div className="h-10 mb-4 animate-pulse bg-zinc-100 rounded-lg w-64" />}>
-        <BuyerVerifiedFilter />
+        <BuyerVerifiedFilter stats={verificationStats} />
       </Suspense>
+
 
       {/* Data Table */}
       <div style={styles.tableContainer}>

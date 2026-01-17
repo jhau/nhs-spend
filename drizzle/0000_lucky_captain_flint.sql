@@ -1,3 +1,23 @@
+CREATE TABLE "assistant_requests" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"request_id" text NOT NULL,
+	"ts" timestamp with time zone DEFAULT now() NOT NULL,
+	"model" text,
+	"message_count" integer,
+	"total_time_ms" integer,
+	"llm_time_ms" integer,
+	"db_time_ms" integer,
+	"prompt_tokens" integer,
+	"completion_tokens" integer,
+	"total_tokens" integer,
+	"cost_usd" numeric(14, 8),
+	"cost_details" jsonb,
+	"llm_calls" jsonb,
+	"tool_calls" jsonb,
+	"status" text NOT NULL,
+	"error_message" text
+);
+--> statement-breakpoint
 CREATE TABLE "audit_log" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"ts" timestamp with time zone DEFAULT now() NOT NULL,
@@ -89,6 +109,9 @@ CREATE TABLE "entities" (
 	"registry_id" text NOT NULL,
 	"name" text NOT NULL,
 	"status" text,
+	"buyer_total_spend" numeric(14, 2) DEFAULT '0' NOT NULL,
+	"supplier_total_received" numeric(14, 2) DEFAULT '0' NOT NULL,
+	"spend_totals_updated_at" timestamp with time zone,
 	"address_line_1" text,
 	"address_line_2" text,
 	"locality" text,
@@ -96,6 +119,13 @@ CREATE TABLE "entities" (
 	"country" text,
 	"latitude" double precision,
 	"longitude" double precision,
+	"uk_country" text,
+	"uk_region" text,
+	"location_source" text,
+	"location_updated_at" timestamp with time zone,
+	"ai_summary" text,
+	"ai_news" jsonb,
+	"ai_summary_updated_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -227,6 +257,10 @@ ALTER TABLE "spend_entries" ADD CONSTRAINT "spend_entries_asset_id_pipeline_asse
 ALTER TABLE "spend_entries" ADD CONSTRAINT "spend_entries_buyer_id_buyers_id_fk" FOREIGN KEY ("buyer_id") REFERENCES "public"."buyers"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "spend_entries" ADD CONSTRAINT "spend_entries_supplier_id_suppliers_id_fk" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "suppliers" ADD CONSTRAINT "suppliers_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "assistant_requests_request_id_unique" ON "assistant_requests" USING btree ("request_id");--> statement-breakpoint
+CREATE INDEX "assistant_requests_ts_idx" ON "assistant_requests" USING btree ("ts");--> statement-breakpoint
+CREATE INDEX "assistant_requests_status_idx" ON "assistant_requests" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "assistant_requests_model_idx" ON "assistant_requests" USING btree ("model");--> statement-breakpoint
 CREATE INDEX "audit_log_table_record_idx" ON "audit_log" USING btree ("table_name","record_pk");--> statement-breakpoint
 CREATE INDEX "audit_log_run_idx" ON "audit_log" USING btree ("run_id");--> statement-breakpoint
 CREATE INDEX "audit_log_ts_idx" ON "audit_log" USING btree ("ts");--> statement-breakpoint
@@ -247,6 +281,8 @@ CREATE UNIQUE INDEX "entities_type_registry_unique" ON "entities" USING btree ("
 CREATE INDEX "entities_name_idx" ON "entities" USING btree ("name");--> statement-breakpoint
 CREATE INDEX "entities_type_idx" ON "entities" USING btree ("entity_type");--> statement-breakpoint
 CREATE INDEX "entities_postal_code_idx" ON "entities" USING btree ("postal_code");--> statement-breakpoint
+CREATE INDEX "entities_buyer_total_spend_idx" ON "entities" USING btree ("buyer_total_spend");--> statement-breakpoint
+CREATE INDEX "entities_supplier_total_received_idx" ON "entities" USING btree ("supplier_total_received");--> statement-breakpoint
 CREATE UNIQUE INDEX "government_departments_slug_unique" ON "government_departments" USING btree ("slug");--> statement-breakpoint
 CREATE INDEX "government_departments_type_idx" ON "government_departments" USING btree ("organisation_type");--> statement-breakpoint
 CREATE UNIQUE INDEX "nhs_organisations_ods_code_unique" ON "nhs_organisations" USING btree ("ods_code");--> statement-breakpoint

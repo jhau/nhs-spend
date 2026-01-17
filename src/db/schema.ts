@@ -30,6 +30,20 @@ export const entities = pgTable(
     name: text("name").notNull(),
     status: text("status"), // 'active' | 'dissolved' | 'inactive' etc.
 
+    // Cached spend totals (denormalized for fast /entities listing)
+    buyerTotalSpend: numeric("buyer_total_spend", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    supplierTotalReceived: numeric("supplier_total_received", {
+      precision: 14,
+      scale: 2,
+    })
+      .notNull()
+      .default("0"),
+    spendTotalsUpdatedAt: timestamp("spend_totals_updated_at", {
+      withTimezone: true,
+    }),
+
     // Common address fields
     addressLine1: text("address_line_1"),
     addressLine2: text("address_line_2"),
@@ -67,6 +81,12 @@ export const entities = pgTable(
     nameIdx: index("entities_name_idx").on(entity.name),
     typeIdx: index("entities_type_idx").on(entity.entityType),
     postalCodeIdx: index("entities_postal_code_idx").on(entity.postalCode),
+    buyerTotalSpendIdx: index("entities_buyer_total_spend_idx").on(
+      entity.buyerTotalSpend
+    ),
+    supplierTotalReceivedIdx: index("entities_supplier_total_received_idx").on(
+      entity.supplierTotalReceived
+    ),
   })
 );
 
@@ -460,6 +480,113 @@ export const auditLog = pgTable(
 );
 
 // =============================================================================
+// Assistant Usage Tracking
+// =============================================================================
+
+/**
+ * Conversation sessions for the assistant (thread-level persistence)
+ */
+export const assistantConversations = pgTable(
+  "assistant_conversations",
+  {
+    id: text("id").primaryKey(), // UUID thread_id
+    title: text("title"), // Auto-generated or user-provided title
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    createdAtIdx: index("assistant_conversations_created_at_idx").on(
+      t.createdAt
+    ),
+    updatedAtIdx: index("assistant_conversations_updated_at_idx").on(
+      t.updatedAt
+    ),
+  })
+);
+
+/**
+ * Individual tool invocations for queryable analytics
+ */
+export const assistantToolCalls = pgTable(
+  "assistant_tool_calls",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .references(() => assistantConversations.id, { onDelete: "cascade" })
+      .notNull(),
+    requestId: text("request_id"), // Links to assistantRequests if needed
+    toolName: text("tool_name").notNull(),
+    input: jsonb("input").$type<Record<string, unknown>>(),
+    output: jsonb("output").$type<unknown>(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    durationMs: integer("duration_ms"),
+    success: boolean("success").notNull().default(true),
+    errorMessage: text("error_message"),
+  },
+  (t) => ({
+    conversationIdx: index("assistant_tool_calls_conversation_idx").on(
+      t.conversationId
+    ),
+    requestIdx: index("assistant_tool_calls_request_idx").on(t.requestId),
+    toolNameIdx: index("assistant_tool_calls_tool_name_idx").on(t.toolName),
+    startedAtIdx: index("assistant_tool_calls_started_at_idx").on(t.startedAt),
+  })
+);
+
+export const assistantRequests = pgTable(
+  "assistant_requests",
+  {
+    id: serial("id").primaryKey(),
+    requestId: text("request_id").notNull(),
+    conversationId: text("conversation_id").references(
+      () => assistantConversations.id,
+      { onDelete: "set null" }
+    ),
+    ts: timestamp("ts", { withTimezone: true }).defaultNow().notNull(),
+
+    model: text("model"),
+    messageCount: integer("message_count"),
+
+    // Timing
+    totalTimeMs: integer("total_time_ms"),
+    llmTimeMs: integer("llm_time_ms"),
+    dbTimeMs: integer("db_time_ms"),
+
+    // Tokens
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    totalTokens: integer("total_tokens"),
+
+    // Cost (best-effort from OpenRouter usage accounting)
+    costUsd: numeric("cost_usd", { precision: 14, scale: 8 }),
+    costDetails: jsonb("cost_details").$type<Record<string, unknown> | null>(),
+
+    // Detailed breakdowns (JSON arrays)
+    llmCalls: jsonb("llm_calls").$type<unknown[] | null>(),
+    toolCalls: jsonb("tool_calls").$type<unknown[] | null>(),
+
+    status: text("status").notNull(), // ok | error | aborted
+    errorMessage: text("error_message"),
+  },
+  (t) => ({
+    requestIdUnique: uniqueIndex("assistant_requests_request_id_unique").on(
+      t.requestId
+    ),
+    conversationIdx: index("assistant_requests_conversation_idx").on(
+      t.conversationId
+    ),
+    tsIdx: index("assistant_requests_ts_idx").on(t.ts),
+    statusIdx: index("assistant_requests_status_idx").on(t.status),
+    modelIdx: index("assistant_requests_model_idx").on(t.model),
+  })
+);
+
+// =============================================================================
 // Contracts (Contract Finder API cache)
 // =============================================================================
 
@@ -557,3 +684,9 @@ export type PipelineSkippedRow = typeof pipelineSkippedRows.$inferSelect;
 export type NewPipelineSkippedRow = typeof pipelineSkippedRows.$inferInsert;
 export type AuditLog = typeof auditLog.$inferSelect;
 export type NewAuditLog = typeof auditLog.$inferInsert;
+export type AssistantConversation = typeof assistantConversations.$inferSelect;
+export type NewAssistantConversation = typeof assistantConversations.$inferInsert;
+export type AssistantToolCall = typeof assistantToolCalls.$inferSelect;
+export type NewAssistantToolCall = typeof assistantToolCalls.$inferInsert;
+export type AssistantRequest = typeof assistantRequests.$inferSelect;
+export type NewAssistantRequest = typeof assistantRequests.$inferInsert;

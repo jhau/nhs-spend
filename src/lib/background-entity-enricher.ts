@@ -3,8 +3,16 @@ import { entities } from "@/db/schema";
 import { enrichEntityLocationsFromPostcodesIo } from "@/lib/entity-location-enrichment";
 import type { PipelineContext } from "@/pipeline/types";
 import { and, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { createLogBatcher } from "./log-batcher";
 
 let isRunning = false;
+const batcher = createLogBatcher({
+  scannedEntities: 0,
+  distinctPostcodes: 0,
+  updatedEntities: 0,
+  updatedPostcodes: 0,
+  failedPostcodes: 0,
+});
 
 declare global {
   // eslint-disable-next-line no-var
@@ -51,46 +59,50 @@ export function startBackgroundEntityEnricher() {
     isRunning = true;
 
     try {
-      const [countRow] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(entities)
-        .where(
-          and(
-            isNotNull(entities.postalCode),
-            or(
-              isNull(entities.latitude),
-              isNull(entities.longitude),
-              isNull(entities.ukRegion),
-              isNull(entities.ukCountry)
-            )
-          )
-        );
-
-      const remaining = Number(countRow?.count ?? 0);
-      console.log(
-        `[Background Entity Enricher] ${remaining} entities remain with postcode but missing lat/lon or region`
-      );
-
-      if (remaining === 0) return;
-
       const ctx: PipelineContext = {
         db: db as any,
         runId: 0,
         dryRun: false,
         log: async (entry) => {
-          console.log(
-            `[Background Entity Enricher] [${entry.level.toUpperCase()}] ${
-              entry.message
-            }`,
-            entry.meta || ""
-          );
+          if (entry.level === "warn" || entry.level === "error") {
+            console.log(
+              `[Background Entity Enricher] [${entry.level.toUpperCase()}] ${
+                entry.message
+              }`,
+              entry.meta || ""
+            );
+          }
         },
       };
 
-      await enrichEntityLocationsFromPostcodesIo(ctx.db, {
+      const result = await enrichEntityLocationsFromPostcodesIo(ctx.db, {
         maxEntities,
         maxDistinctPostcodes: Math.min(100, Math.max(1, postcodeBatchSize)),
         logger: ctx.log,
+      });
+
+      batcher.accumulate(result);
+
+      batcher.flush(async (metrics) => {
+        const [countRow] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(entities)
+          .where(
+            and(
+              isNotNull(entities.postalCode),
+              or(
+                isNull(entities.latitude),
+                isNull(entities.longitude),
+                isNull(entities.ukRegion),
+                isNull(entities.ukCountry)
+              )
+            )
+          );
+
+        const remaining = Number(countRow?.count ?? 0);
+        console.log(
+          `[Background Entity Enricher] Summary (last 60s): updated=${metrics.updatedEntities} entities (${metrics.updatedPostcodes} postcodes). Remaining: ${remaining} entities with missing data.`
+        );
       });
     } catch (err) {
       console.error("[Background Entity Enricher] Fatal error in batch:", err);

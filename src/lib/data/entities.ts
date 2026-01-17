@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { sql, eq, count, ilike, and, desc } from "drizzle-orm";
+import { sql, eq, count, ilike, and, desc, asc } from "drizzle-orm";
 import { entities, suppliers, spendEntries, buyers } from "@/db/schema";
 import { refreshAISummary } from "@/lib/ai-summary";
 
@@ -18,8 +18,8 @@ export interface EntityWithStats {
   registryId: string;
   locality: string | null;
   postalCode: string | null;
-  totalSpend: number;
-  transactionCount: number;
+  buyerTotalSpend: number;
+  supplierTotalReceived: number;
   supplierCount: number;
   buyerCount: number;
 }
@@ -43,7 +43,7 @@ export async function getEntities(options: {
   offset?: number;
   search?: string;
   type?: string;
-  sort?: string;
+  sort?: "buyerTotalSpend" | "supplierTotalReceived";
   order?: "asc" | "desc";
 }): Promise<EntitiesListResponse> {
   const {
@@ -51,53 +51,9 @@ export async function getEntities(options: {
     offset = 0,
     search,
     type,
-    sort = "totalSpend",
+    sort = "supplierTotalReceived",
     order = "desc",
   } = options;
-
-  // First, get the spend stats per entity
-  // We join spend_entries -> suppliers -> entities
-  const entityStats = db
-    .select({
-      entityId: suppliers.entityId,
-      totalSpend: sql<number>`sum(${spendEntries.amount})`.as("total_spend"),
-      transactionCount: sql<number>`count(*)`.as("transaction_count"),
-      supplierCount: sql<number>`count(distinct ${suppliers.id})`.as("supplier_count"),
-    })
-    .from(spendEntries)
-    .innerJoin(suppliers, eq(spendEntries.supplierId, suppliers.id))
-    .where(sql`${suppliers.entityId} IS NOT NULL`)
-    .groupBy(suppliers.entityId)
-    .as("entity_stats");
-
-  // Get buyer counts per entity
-  const buyerStats = db
-    .select({
-      entityId: buyers.entityId,
-      buyerCount: sql<number>`count(*)`.as("buyer_count"),
-    })
-    .from(buyers)
-    .where(sql`${buyers.entityId} IS NOT NULL`)
-    .groupBy(buyers.entityId)
-    .as("buyer_stats");
-
-  let query = db
-    .select({
-      id: entities.id,
-      name: entities.name,
-      entityType: entities.entityType,
-      registryId: entities.registryId,
-      locality: entities.locality,
-      postalCode: entities.postalCode,
-      totalSpend: entityStats.totalSpend,
-      transactionCount: entityStats.transactionCount,
-      supplierCount: entityStats.supplierCount,
-      buyerCount: buyerStats.buyerCount,
-    })
-    .from(entities)
-    .leftJoin(entityStats, eq(entities.id, entityStats.entityId))
-    .leftJoin(buyerStats, eq(entities.id, buyerStats.entityId))
-    .$dynamic();
 
   const filters = [];
   if (type && type !== "all") {
@@ -111,48 +67,106 @@ export async function getEntities(options: {
     filters.push(ilike(entities.name, `%${search}%`));
   }
 
-  if (filters.length > 0) {
-    query = query.where(and(...filters));
-  }
-
-  const entitiesRows = await query
-    .orderBy(order === "desc" ? desc(entityStats.totalSpend) : entityStats.totalSpend)
-    .limit(limit)
-    .offset(offset);
-
-  // Total count for pagination (affected by filters)
-  const countQuery = db.select({ count: count() }).from(entities);
-  if (filters.length > 0) {
-    countQuery.where(and(...filters));
-  }
-  const totalCountResult = await countQuery;
-
-  // Summary counts for stat cards (not affected by type filter, but maybe by search)
   const searchFilter = search ? ilike(entities.name, `%${search}%`) : undefined;
-  
-  const [totalRes, companyRes, nhsRes, councilRes, govRes] = await Promise.all([
-    db.select({ count: count() }).from(entities).where(searchFilter),
-    db.select({ count: count() }).from(entities).where(and(eq(entities.entityType, "company"), searchFilter)),
-    db.select({ count: count() }).from(entities).where(and(ilike(entities.entityType, "nhs_%"), searchFilter)),
-    db.select({ count: count() }).from(entities).where(and(eq(entities.entityType, "council"), searchFilter)),
-    db.select({ count: count() }).from(entities).where(and(eq(entities.entityType, "government_department"), searchFilter)),
+
+  // Optimized: Combine summary counts into a single query
+  const countsPromise = db
+    .select({
+      total: sql<number>`count(*)`,
+      company: sql<number>`count(*) filter (where ${entities.entityType} = 'company')`,
+      nhs: sql<number>`count(*) filter (where ${entities.entityType} ilike 'nhs_%')`,
+      council: sql<number>`count(*) filter (where ${entities.entityType} = 'council')`,
+      government_department: sql<number>`count(*) filter (where ${entities.entityType} = 'government_department')`,
+    })
+    .from(entities)
+    .where(searchFilter);
+
+  // Linked suppliers per entity (cheap; no spend_entries join)
+  const supplierStats = db
+    .select({
+      entityId: suppliers.entityId,
+      supplierCount: sql<number>`count(*)`.as("supplier_count"),
+    })
+    .from(suppliers)
+    .innerJoin(entities, eq(suppliers.entityId, entities.id))
+    .where(and(sql`${suppliers.entityId} IS NOT NULL`, ...filters))
+    .groupBy(suppliers.entityId)
+    .as("supplier_stats");
+
+  // Get buyer counts per entity, also filtered
+  const buyerStats = db
+    .select({
+      entityId: buyers.entityId,
+      buyerCount: sql<number>`count(*)`.as("buyer_count"),
+    })
+    .from(buyers)
+    .innerJoin(entities, eq(buyers.entityId, entities.id))
+    .where(and(
+      sql`${buyers.entityId} IS NOT NULL`,
+      ...filters
+    ))
+    .groupBy(buyers.entityId)
+    .as("buyer_stats");
+
+  let mainQuery = db
+    .select({
+      id: entities.id,
+      name: entities.name,
+      entityType: entities.entityType,
+      registryId: entities.registryId,
+      locality: entities.locality,
+      postalCode: entities.postalCode,
+      buyerTotalSpend: entities.buyerTotalSpend,
+      supplierTotalReceived: entities.supplierTotalReceived,
+      supplierCount: supplierStats.supplierCount,
+      buyerCount: buyerStats.buyerCount,
+    })
+    .from(entities)
+    .leftJoin(supplierStats, eq(entities.id, supplierStats.entityId))
+    .leftJoin(buyerStats, eq(entities.id, buyerStats.entityId))
+    .where(and(...filters))
+    .$dynamic();
+
+  // Total count for pagination
+  const totalCountPromise = db
+    .select({ count: count() })
+    .from(entities)
+    .where(and(...filters));
+
+  const [entitiesRows, totalCountResult, countsRes] = await Promise.all([
+    mainQuery
+      .orderBy(
+        sort === "buyerTotalSpend"
+          ? order === "desc"
+            ? desc(entities.buyerTotalSpend)
+            : asc(entities.buyerTotalSpend)
+          : order === "desc"
+          ? desc(entities.supplierTotalReceived)
+          : asc(entities.supplierTotalReceived)
+      )
+      .limit(limit)
+      .offset(offset),
+    totalCountPromise,
+    countsPromise,
   ]);
+
+  const counts = countsRes[0] || { total: 0, company: 0, nhs: 0, council: 0, government_department: 0 };
 
   return {
     entities: entitiesRows.map(row => ({
       ...row,
-      totalSpend: Number(row.totalSpend || 0),
-      transactionCount: Number(row.transactionCount || 0),
       supplierCount: Number(row.supplierCount || 0),
       buyerCount: Number(row.buyerCount || 0),
+      buyerTotalSpend: Number(row.buyerTotalSpend || 0),
+      supplierTotalReceived: Number(row.supplierTotalReceived || 0),
     })),
     totalCount: totalCountResult[0]?.count || 0,
     countsByType: {
-      total: totalRes[0]?.count || 0,
-      company: companyRes[0]?.count || 0,
-      nhs: nhsRes[0]?.count || 0,
-      council: councilRes[0]?.count || 0,
-      government_department: govRes[0]?.count || 0,
+      total: Number(counts.total),
+      company: Number(counts.company),
+      nhs: Number(counts.nhs),
+      council: Number(counts.council),
+      government_department: Number(counts.government_department),
     },
     limit,
     offset,
@@ -233,6 +247,7 @@ export async function getEntityData(id: number, options: {
   const { startDate = "", endDate = "", page = 1, limit = 50, view = "supplier" } = options;
   const offset = (page - 1) * limit;
 
+  const isAllTime = !startDate && !endDate;
   const dateFilter =
     startDate && endDate
       ? `AND se.payment_date >= '${startDate}' AND se.payment_date <= '${endDate}'`
@@ -241,13 +256,17 @@ export async function getEntityData(id: number, options: {
   // Get entity info
   const entityRes = await db.execute(sql.raw(`
     SELECT id, entity_type, name, registry_id, address_line_1, locality, postal_code,
-           ai_summary, ai_news, ai_summary_updated_at
+           ai_summary, ai_news, ai_summary_updated_at,
+           buyer_total_spend, supplier_total_received
     FROM entities 
     WHERE id = ${id}
   `));
 
   let entity = entityRes.rows[0] as any;
   if (!entity) return null;
+
+  const cachedBuyerTotalSpend = parseFloat(entity.buyer_total_spend) || 0;
+  const cachedSupplierTotalReceived = parseFloat(entity.supplier_total_received) || 0;
 
   // We no longer await refreshAISummary here to avoid delaying the page load.
   // Instead, the client will fetch the AI summary separately.
@@ -266,17 +285,24 @@ export async function getEntityData(id: number, options: {
   const linkedBuyers = buyersRes.rows as any[];
   const buyerIds = linkedBuyers.map(b => b.id);
 
-  // Get counts for tabs
-  const supplierCountRes = supplierIds.length > 0 ? await db.execute(sql.raw(`
-    SELECT COUNT(*) as count FROM spend_entries WHERE supplier_id IN (${supplierIds.join(",")})
-  `)) : { rows: [{ count: 0 }] };
-  
-  const buyerCountRes = buyerIds.length > 0 ? await db.execute(sql.raw(`
-    SELECT COUNT(*) as count FROM spend_entries WHERE buyer_id IN (${buyerIds.join(",")})
-  `)) : { rows: [{ count: 0 }] };
+  // Determine whether each tab has data.
+  // Prefer the cached totals (fast), and only fall back to COUNT queries when totals are 0.
+  let hasSupplierData = supplierIds.length > 0 && cachedSupplierTotalReceived > 0;
+  let hasBuyerData = buyerIds.length > 0 && cachedBuyerTotalSpend > 0;
 
-  const hasSupplierData = parseInt((supplierCountRes.rows[0] as any).count) > 0;
-  const hasBuyerData = parseInt((buyerCountRes.rows[0] as any).count) > 0;
+  if (!hasSupplierData && supplierIds.length > 0) {
+    const supplierCountRes = await db.execute(sql.raw(`
+      SELECT COUNT(*) as count FROM spend_entries WHERE supplier_id IN (${supplierIds.join(",")})
+    `));
+    hasSupplierData = parseInt((supplierCountRes.rows[0] as any).count) > 0;
+  }
+
+  if (!hasBuyerData && buyerIds.length > 0) {
+    const buyerCountRes = await db.execute(sql.raw(`
+      SELECT COUNT(*) as count FROM spend_entries WHERE buyer_id IN (${buyerIds.join(",")})
+    `));
+    hasBuyerData = parseInt((buyerCountRes.rows[0] as any).count) > 0;
+  }
 
   // Decide which data to fetch based on view
   // If no view is provided, default to the one that has data
@@ -309,18 +335,32 @@ export async function getEntityData(id: number, options: {
   const idList = activeIds.join(",");
 
   // Get summary stats
-  const summaryRes = await db.execute(sql.raw(`
-    SELECT 
-      COALESCE(SUM(se.amount), 0) as total_spend,
-      COUNT(*) as transaction_count,
-      COUNT(DISTINCT se.buyer_id) as buyer_count,
-      COUNT(DISTINCT se.supplier_id) as supplier_count,
-      MIN(se.payment_date) as earliest_date,
-      MAX(se.payment_date) as latest_date
-    FROM spend_entries se
-    WHERE se.${idField} IN (${idList})
-    ${dateFilter}
-  `));
+  const summaryRes = await db.execute(sql.raw(
+    isAllTime
+      ? `
+        SELECT 
+          0 as total_spend,
+          COUNT(*) as transaction_count,
+          COUNT(DISTINCT se.buyer_id) as buyer_count,
+          COUNT(DISTINCT se.supplier_id) as supplier_count,
+          MIN(se.payment_date) as earliest_date,
+          MAX(se.payment_date) as latest_date
+        FROM spend_entries se
+        WHERE se.${idField} IN (${idList})
+      `
+      : `
+        SELECT 
+          COALESCE(SUM(se.amount), 0) as total_spend,
+          COUNT(*) as transaction_count,
+          COUNT(DISTINCT se.buyer_id) as buyer_count,
+          COUNT(DISTINCT se.supplier_id) as supplier_count,
+          MIN(se.payment_date) as earliest_date,
+          MAX(se.payment_date) as latest_date
+        FROM spend_entries se
+        WHERE se.${idField} IN (${idList})
+        ${dateFilter}
+      `
+  ));
 
   const summaryData = summaryRes.rows[0] as any;
 
@@ -477,7 +517,11 @@ export async function getEntityData(id: number, options: {
     hasSupplierData,
     hasBuyerData,
     summary: {
-      totalSpend: parseFloat(summaryData.total_spend) || 0,
+      totalSpend: isAllTime
+        ? activeView === "supplier"
+          ? cachedSupplierTotalReceived
+          : cachedBuyerTotalSpend
+        : parseFloat(summaryData.total_spend) || 0,
       transactionCount: parseInt(summaryData.transaction_count) || 0,
       buyerCount: parseInt(summaryData.buyer_count) || 0,
       supplierCount: parseInt(summaryData.supplier_count) || 0,

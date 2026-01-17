@@ -17,18 +17,22 @@ export function EntityFilters({ startDate, endDate }: EntityFiltersProps) {
     
     switch (preset) {
       case "2024":
+        params.delete("allTime");
         params.set("startDate", "2024-01-01");
         params.set("endDate", "2024-12-31");
         break;
       case "2023":
+        params.delete("allTime");
         params.set("startDate", "2023-01-01");
         params.set("endDate", "2023-12-31");
         break;
       case "2022":
+        params.delete("allTime");
         params.set("startDate", "2022-01-01");
         params.set("endDate", "2022-12-31");
         break;
       case "all":
+        params.set("allTime", "1");
         params.delete("startDate");
         params.delete("endDate");
         break;
@@ -39,6 +43,7 @@ export function EntityFilters({ startDate, endDate }: EntityFiltersProps) {
   const onDateChange = (type: "startDate" | "endDate", value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", "1");
+    params.delete("allTime");
     if (value) {
       params.set(type, value);
     } else {
